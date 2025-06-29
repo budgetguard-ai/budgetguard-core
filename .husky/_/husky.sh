@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 if [ -z "$husky_skip_init" ]; then
-  debug () {
+  debug() {
     [ "$HUSKY_DEBUG" = "true" ] && echo "husky (debug) - $*"
   }
   readonly hookName="$(basename "$0")"

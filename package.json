@@ -10,7 +10,7 @@
     "lint": "eslint . --ext .ts",
     "test": "vitest run",
     "prepare": "husky install",
-    "commitlint": "commitlint --edit",
+    "commitlint": "commitlint",
     "postinstall": "npm run prepare"
   },
   "dependencies": {
