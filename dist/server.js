@@ -1,6 +1,8 @@
 import fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import { createClient } from "redis";
+import dotenv from "dotenv";
+dotenv.config();
 export async function buildServer() {
     const app = fastify({ logger: true });
     let redisClient;
@@ -9,18 +11,19 @@ export async function buildServer() {
         await redisClient.connect();
     }
     await app.register(rateLimit, {
-        ...(redisClient ? { client: redisClient } : {}),
-        max: 100,
+        client: redisClient,
+        max: Number(process.env.MAX_REQS_PER_MIN || 100),
         timeWindow: "1 minute",
         keyGenerator: (req) => req.headers["x-tenant-id"] || "public",
+        errorResponseBuilder: () => ({ error: "Rate limit exceeded" }),
+    });
+    app.setErrorHandler((err, _req, reply) => {
+        if (err.error === "Rate limit exceeded") {
+            reply.code(429).send({ error: "Rate limit exceeded" });
+            return;
+        }
+        reply.send(err);
     });
     app.get("/health", async () => ({ ok: true }));
     return app;
-}
-if (process.env.NODE_ENV !== "test") {
-    const app = await buildServer();
-    app.listen({ port: 3000, host: "0.0.0.0" }).catch((err) => {
-        app.log.error(err);
-        process.exit(1);
-    });
 }
