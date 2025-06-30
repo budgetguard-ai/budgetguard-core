@@ -1,0 +1,18 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model UsageLedger {
+  id        BigInt   @id @default(autoincrement())
+  ts        DateTime @default(now())
+  tenant    String
+  route     String
+  usd       Decimal
+  promptTok Int
+  compTok   Int
+}

@@ -9,6 +9,30 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: budgetguard
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://postgres:secret@localhost:5432/budgetguard
+      REDIS_URL: redis://localhost:6379
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,6 +41,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run build
       - run: npm run test

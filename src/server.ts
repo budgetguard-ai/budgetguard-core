@@ -14,6 +14,19 @@ export async function buildServer() {
     await redisClient.connect();
   }
 
+  app.addHook("onSend", async (req, _reply, payload) => {
+    if (!redisClient) return payload;
+    await redisClient.xAdd("bg_events", "*", {
+      ts: Date.now().toString(),
+      tenant: (req.headers["x-tenant-id"] as string) || "public",
+      route: req.routeOptions.url ?? req.url,
+      usd: "0",
+      promptTok: "0",
+      compTok: "0",
+    });
+    return payload;
+  });
+
   await app.register(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rateLimit as any,

@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      - DATABASE_URL=postgres://postgres:secret@postgres:5432/budgetguard
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "3000:3000" 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379" 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"  
+    volumes:
+      - pg:/var/lib/postgresql/data
+volumes:
+  pg: {}
