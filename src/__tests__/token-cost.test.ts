@@ -27,4 +27,17 @@ describe("token + cost", () => {
     const expected = (14 * 0.03 + 1 * 0.06) / 1000;
     expect(res.usd).toBeCloseTo(expected, 6);
   });
+
+  it("handles empty prompt", () => {
+    const res = countTokensAndCost({ model: "gpt-3.5-turbo", prompt: "" });
+    expect(res.promptTokens).toBe(0);
+    expect(res.usd).toBe(0);
+  });
+
+  it("falls back on unknown model", () => {
+    const res = countTokensAndCost({ model: "unknown", prompt: "hi" });
+    expect(res.promptTokens).toBe(1);
+    // uses gpt-3.5 pricing
+    expect(res.usd).toBeCloseTo(0.001 / 1000, 6);
+  });
 });

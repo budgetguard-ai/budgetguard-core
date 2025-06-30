@@ -86,5 +86,43 @@ export async function buildServer() {
 
   app.get("/health", async () => ({ ok: true }));
 
+  // proxy OpenAI completions endpoint
+  app.post("/v1/completions", async (req, reply) => {
+    const apiKey =
+      (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
+    if (!apiKey) {
+      return reply.code(400).send({ error: "Missing OpenAI key" });
+    }
+    const resp = await fetch("https://api.openai.com/v1/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(req.body),
+    });
+    const json = await resp.json();
+    reply.code(resp.status).send(json);
+  });
+
+  // proxy OpenAI chat completions endpoint
+  app.post("/v1/chat/completions", async (req, reply) => {
+    const apiKey =
+      (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
+    if (!apiKey) {
+      return reply.code(400).send({ error: "Missing OpenAI key" });
+    }
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(req.body),
+    });
+    const json = await resp.json();
+    reply.code(resp.status).send(json);
+  });
+
   return app;
 }

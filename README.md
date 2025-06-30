@@ -15,6 +15,25 @@ Run the stack with Postgres and Redis using Docker:
 docker compose up --build
 ```
 
+## Proxy Endpoints
+
+BudgetGuard forwards OpenAI requests and logs usage locally. Set `OPENAI_KEY` in
+your environment or send `X-OpenAI-Key` per request.
+
+```
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: demo" \
+  -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hi"}]}' \
+  http://localhost:3000/v1/chat/completions
+```
+
+Responses are proxied back and an entry is written to the `UsageLedger` table:
+
+```
+ts | tenant | route | usd | promptTok | compTok
+```
+
 ## Cost Calculation
 
 BudgetGuard counts tokens using `tiktoken` and multiplies by the per-model
