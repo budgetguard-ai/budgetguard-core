@@ -44,6 +44,7 @@ beforeAll(async () => {
   process.env.BUDGET_PERIODS = "daily";
   process.env.BUDGET_DAILY_USD = "0.00001";
   process.env.REDIS_URL = "redis://test";
+  process.env.OPENAI_KEY = "test-key";
   redis = createClient();
   const mod = await import("../server");
   buildServer = mod.buildServer;
