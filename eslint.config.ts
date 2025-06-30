@@ -11,7 +11,12 @@ export default [
   },
   eslintJs.configs.recommended,
   ...compat.config({
-    ignorePatterns: ["dist/**", "node_modules/**", "eslint.config.ts"],
+    ignorePatterns: [
+      "dist/**",
+      "node_modules/**",
+      "eslint.config.ts",
+      "vitest.config.ts",
+    ],
 
     extends: [
       "plugin:@typescript-eslint/recommended",

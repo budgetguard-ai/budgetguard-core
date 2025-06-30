@@ -26,15 +26,22 @@ function priceFor(model: string) {
 }
 
 export function countTokensAndCost(input: CountInput): CountResult {
-  const enc = encoding_for_model(input.model as TiktokenModel);
+  let enc: ReturnType<typeof encoding_for_model>;
+  try {
+    enc = encoding_for_model(input.model as TiktokenModel);
+  } catch {
+    enc = encoding_for_model("gpt-3.5-turbo" as TiktokenModel);
+  }
   let promptTokens = 0;
   let completionTokens = 0;
 
   const price = priceFor(input.model);
 
   if (typeof input.prompt === "string") {
-    promptTokens = enc.encode(input.prompt).length;
-  } else {
+    if (input.prompt) {
+      promptTokens = enc.encode(input.prompt).length;
+    }
+  } else if (Array.isArray(input.prompt)) {
     for (const msg of input.prompt) {
       promptTokens += 4; // per-message tokens
       promptTokens += enc.encode(msg.role).length;
