@@ -1,8 +1,11 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { createClient } from "redis";
 import dotenv from "dotenv";
+import { ledgerKey, getBudgetPeriods } from "./ledger.js";
 
 dotenv.config();
+
+const BUDGET_PERIODS = getBudgetPeriods();
 
 async function main() {
   const prisma = new PrismaClient();
@@ -36,6 +39,13 @@ async function main() {
           compTok: Number(data.compTok),
         },
       });
+      for (const period of BUDGET_PERIODS) {
+        const key = ledgerKey(period, new Date(Number(data.ts)));
+        await redis.incrByFloat(
+          `ledger:${data.tenant}:${key}`,
+          parseFloat(data.usd),
+        );
+      }
     }
   }
 }

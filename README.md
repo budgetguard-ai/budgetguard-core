@@ -46,7 +46,32 @@ OpenAI pricing. The default table:
 | gpt-4-turbo   | $0.01        | $0.03           |
 
 The total USD for a request is stored in Redis and persisted to Postgres by the
-worker. Configure a monthly cap with `MAX_MONTHLY_USD`.
+worker. Configure a monthly cap with `MAX_MONTHLY_USD` or use `BUDGET_PERIODS`
+to enforce daily, weekly, monthly, or custom windows simultaneously.
+
+## Budget
+
+Set `DEFAULT_BUDGET_USD` to limit spend for all tenants. Provide one or more
+periods via `BUDGET_PERIODS` (e.g. `daily,monthly`) and specify budgets for each
+with variables like `BUDGET_DAILY_USD` or `BUDGET_MONTHLY_USD`. For custom
+ranges also supply `BUDGET_START_DATE` and `BUDGET_END_DATE`. Override tenants
+with `BUDGET_<PERIOD>_<TENANT>` variables. When a request would exceed any
+budget, the server responds with:
+
+```json
+HTTP/1.1 402 Payment Required
+{"error":"Budget exceeded"}
+```
+
+### Example
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: demo" \
+  -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
+  http://localhost:3000/v1/completions
+```
 
 ### Example Request
 
