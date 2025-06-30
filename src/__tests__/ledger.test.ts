@@ -18,7 +18,7 @@ beforeEach(async () => {
 beforeAll(async () => {
   process.env.DATABASE_URL =
     "postgres://postgres:secret@localhost:5432/budgetguard";
-  execSync("npx prisma migrate deploy");
+  // execSync("npx prisma migrate deploy");
   prisma = new PrismaClient();
   await prisma.$connect();
   redis = createClient();
@@ -27,12 +27,15 @@ beforeAll(async () => {
   await new Promise((r) => setTimeout(r, 1000));
 });
 
-afterAll(async () => {
-  if (worker) worker.kill();
-  await redis.quit();
-  await prisma.$disconnect();
-  execSync("docker compose down");
-});
+afterAll(
+  async () => {
+    if (worker) worker.kill();
+    await redis.quit();
+    await prisma.$disconnect();
+    execSync("docker compose down");
+  },
+  30000, // Set timeout to 30 seconds
+);
 
 describe("usage ledger", () => {
   it("inserts events", async () => {

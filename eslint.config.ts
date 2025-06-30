@@ -6,6 +6,9 @@ import tsParser from "@typescript-eslint/parser";
 const compat = new FlatCompat();
 
 export default [
+  {
+    ignores: ['node_modules', 'dist', 'build', 'coverage'],
+  },
   eslintJs.configs.recommended,
   ...compat.config({
     ignorePatterns: ["dist/**", "node_modules/**", "eslint.config.ts"],

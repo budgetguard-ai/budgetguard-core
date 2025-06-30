@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { createClient } from "redis";
 import dotenv from "dotenv";
 
@@ -31,7 +31,7 @@ async function main() {
           ts: new Date(Number(data.ts)),
           tenant: data.tenant,
           route: data.route,
-          usd: data.usd,
+          usd: new Prisma.Decimal(data.usd),
           promptTok: Number(data.promptTok),
           compTok: Number(data.compTok),
         },
