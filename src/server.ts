@@ -3,8 +3,15 @@ import rateLimit from "@fastify/rate-limit";
 import { createClient } from "redis";
 import dotenv from "dotenv";
 import { countTokensAndCost } from "./token.js";
+import { ledgerKey, getBudgetPeriods } from "./ledger.js";
 
 dotenv.config();
+
+const DEFAULT_BUDGET = Number(
+  process.env.DEFAULT_BUDGET_USD || process.env.MAX_MONTHLY_USD || 50,
+);
+
+const BUDGET_PERIODS = getBudgetPeriods();
 
 export async function buildServer() {
   const app = fastify({ logger: true });
@@ -57,6 +64,11 @@ export async function buildServer() {
       promptTok: promptTok.toString(),
       compTok: compTok.toString(),
     });
+    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    for (const period of BUDGET_PERIODS) {
+      const key = ledgerKey(period);
+      await redisClient.incrByFloat(`ledger:${tenant}:${key}`, usd);
+    }
     return payload;
   });
 
@@ -88,6 +100,23 @@ export async function buildServer() {
 
   // proxy OpenAI completions endpoint
   app.post("/v1/completions", async (req, reply) => {
+    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    for (const period of BUDGET_PERIODS) {
+      const key = ledgerKey(period);
+      const budget = Number(
+        process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
+          process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
+          DEFAULT_BUDGET,
+      );
+      let usage = 0;
+      if (redisClient) {
+        const cur = await redisClient.get(`ledger:${tenant}:${key}`);
+        if (cur) usage = parseFloat(cur);
+      }
+      if (usage >= budget) {
+        return reply.code(402).send({ error: "Budget exceeded" });
+      }
+    }
     const apiKey =
       (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
     if (!apiKey) {
@@ -102,11 +131,28 @@ export async function buildServer() {
       body: JSON.stringify(req.body),
     });
     const json = await resp.json();
-    reply.code(resp.status).send(json);
+    return reply.code(resp.status).send(json);
   });
 
   // proxy OpenAI chat completions endpoint
   app.post("/v1/chat/completions", async (req, reply) => {
+    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    for (const period of BUDGET_PERIODS) {
+      const key = ledgerKey(period);
+      const budget = Number(
+        process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
+          process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
+          DEFAULT_BUDGET,
+      );
+      let usage = 0;
+      if (redisClient) {
+        const cur = await redisClient.get(`ledger:${tenant}:${key}`);
+        if (cur) usage = parseFloat(cur);
+      }
+      if (usage >= budget) {
+        return reply.code(402).send({ error: "Budget exceeded" });
+      }
+    }
     const apiKey =
       (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
     if (!apiKey) {
@@ -121,7 +167,7 @@ export async function buildServer() {
       body: JSON.stringify(req.body),
     });
     const json = await resp.json();
-    reply.code(resp.status).send(json);
+    return reply.code(resp.status).send(json);
   });
 
   return app;
