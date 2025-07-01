@@ -144,3 +144,32 @@ allow {
 The policy receives an input object with `usage`, `budget`, `route`, `time`, and
 `tenant` fields. If evaluation returns `true`, the request is allowed. Otherwise
 the server responds with `403` and an error message.
+
+## Schema & Data Model
+
+```mermaid
+erDiagram
+  Tenant ||--o{ ApiKey : has
+  Tenant ||--o{ Budget : has
+  Tenant ||--o{ PolicyBundle : has
+  Tenant ||--o{ Alert : has
+  Tenant ||--o{ AuditLog : has
+  Tenant ||--o{ UsageLedger : has
+```
+
+Budgets, API keys, policy bundles, alerts and audit logs are scoped to a tenant.
+Each UsageLedger entry references both the tenant name and its ID for
+compatibility. Budgets track spend for daily, weekly, monthly or custom periods.
+
+Example: query the remaining monthly budget for each tenant:
+
+```sql
+SELECT t.name, b.amountUsd - COALESCE(SUM(l.usd),0) AS remaining
+FROM Tenant t
+LEFT JOIN Budget b ON b.tenantId = t.id AND b.period = 'monthly'
+LEFT JOIN UsageLedger l ON l.tenantId = t.id
+GROUP BY t.name, b.amountUsd;
+```
+
+Run migrations in development with `npx prisma migrate dev` and deploy to
+production with `npm run migrate`. The ERD below summarizes the relationships.

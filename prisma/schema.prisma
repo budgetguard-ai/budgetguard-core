@@ -11,8 +11,86 @@ model UsageLedger {
   id        BigInt   @id @default(autoincrement())
   ts        DateTime @default(now())
   tenant    String
+  tenantId  Int?
+  tenantRef Tenant?  @relation(fields: [tenantId], references: [id])
   route     String
   usd       Decimal
   promptTok Int
   compTok   Int
+
+  @@index([tenantId])
+}
+
+model Tenant {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  apiKeys   ApiKey[]
+  budgets   Budget[]
+  policies  PolicyBundle[]
+  alerts    Alert[]
+  audits    AuditLog[]
+  ledger    UsageLedger[]
+}
+
+model ApiKey {
+  id        Int       @id @default(autoincrement())
+  key       String    @unique
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  Int
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([tenantId])
+}
+
+model Budget {
+  id        Int       @id @default(autoincrement())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  Int
+  period    String
+  amountUsd Decimal
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+model PolicyBundle {
+  id        Int       @id @default(autoincrement())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  Int
+  name      String
+  wasmPath  String
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+model Alert {
+  id          Int       @id @default(autoincrement())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId    Int
+  type        String
+  target      String
+  thresholdUsd Decimal
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+model AuditLog {
+  id        Int       @id @default(autoincrement())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  Int
+  actor     String
+  event     String
+  details   String
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
 }
