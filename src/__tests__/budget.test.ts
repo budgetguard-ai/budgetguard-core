@@ -74,7 +74,10 @@ describe("budget enforcement", () => {
       url: "/v1/completions",
       payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
     });
-    expect(res.statusCode).toBe(402);
-    expect(res.json()).toEqual({ error: "Budget exceeded" });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: "Request denied by policy",
+      details: { usage: 0.00001, budget: 0.00001 },
+    });
   });
 });

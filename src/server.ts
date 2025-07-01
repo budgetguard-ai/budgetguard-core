@@ -4,6 +4,7 @@ import { createClient } from "redis";
 import dotenv from "dotenv";
 import { countTokensAndCost } from "./token.js";
 import { ledgerKey, getBudgetPeriods } from "./ledger.js";
+import { evaluatePolicy } from "./policy/opa.js";
 
 dotenv.config();
 
@@ -113,6 +114,31 @@ export async function buildServer() {
         const cur = await redisClient.get(`ledger:${tenant}:${key}`);
         if (cur) usage = parseFloat(cur);
       }
+      const allow = await evaluatePolicy({
+        usage,
+        budget,
+        route: req.routeOptions.url ?? req.url,
+        time: new Date().getHours(),
+        tenant,
+      });
+      app.log.info(
+        {
+          input: {
+            usage,
+            budget,
+            route: req.routeOptions.url ?? req.url,
+            tenant,
+          },
+          allow,
+        },
+        "policy decision",
+      );
+      if (!allow) {
+        return reply.code(403).send({
+          error: "Request denied by policy",
+          details: { usage, budget },
+        });
+      }
       if (usage >= budget) {
         return reply.code(402).send({ error: "Budget exceeded" });
       }
@@ -148,6 +174,31 @@ export async function buildServer() {
       if (redisClient) {
         const cur = await redisClient.get(`ledger:${tenant}:${key}`);
         if (cur) usage = parseFloat(cur);
+      }
+      const allow = await evaluatePolicy({
+        usage,
+        budget,
+        route: req.routeOptions.url ?? req.url,
+        time: new Date().getHours(),
+        tenant,
+      });
+      app.log.info(
+        {
+          input: {
+            usage,
+            budget,
+            route: req.routeOptions.url ?? req.url,
+            tenant,
+          },
+          allow,
+        },
+        "policy decision",
+      );
+      if (!allow) {
+        return reply.code(403).send({
+          error: "Request denied by policy",
+          details: { usage, budget },
+        });
       }
       if (usage >= budget) {
         return reply.code(402).send({ error: "Budget exceeded" });

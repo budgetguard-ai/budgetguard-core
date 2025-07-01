@@ -1,7 +1,8 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { createClient } from "redis";
 import dotenv from "dotenv";
-import { ledgerKey, getBudgetPeriods } from "./ledger.js";
+// @ts-expect-error: Importing .ts extension directly for compatibility
+import { ledgerKey, getBudgetPeriods } from "./ledger.ts";
 
 dotenv.config();
 

@@ -41,6 +41,11 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      - name: Install OPA CLI
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa
+          sudo mv opa /usr/local/bin/opa
       - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run build

@@ -88,3 +88,59 @@ After a request is processed, the worker inserts a row into `UsageLedger`:
 ```
 id | ts | tenant | route | usd | promptTok | compTok
 ```
+
+## Policy Engine
+
+BudgetGuard uses [Open Policy Agent](https://www.openpolicyagent.org/) to make
+allow/deny decisions before forwarding requests. Policies are compiled to WASM
+and evaluated at runtime. The default policy is located in
+`src/policy/opa.rego` and can be extended to enforce custom rules.
+
+### Building the Policy
+
+Install the `opa` CLI and run the build script whenever the policy changes or
+before starting the server/tests. On macOS you can install OPA via Homebrew:
+
+```bash
+brew install opa
+```
+
+For Linux and Windows, download the appropriate binary from the
+[OPA releases](https://openpolicyagent.org/docs/latest/#install) page and place
+it in your `PATH`. See the [official installation guide](https://openpolicyagent.org/docs/latest/#install)
+for more details.
+
+Once the CLI is installed, run the build script:
+
+```bash
+bash scripts/build-opa-wasm.sh
+```
+
+This compiles the policy to `src/policy/opa_policy.wasm` which the server loads
+on startup. Run the script once before starting the server or running tests so
+the WASM file is present. Set `OPA_POLICY_PATH` to override the location.
+
+### Example Rego Policy
+
+```rego
+package budgetguard.policy
+
+default allow = false
+
+allow {
+  input.usage < input.budget
+}
+
+deny_admin_after_hours {
+  input.route == "/admin/tenant-usage"
+  input.time > 20
+}
+
+allow {
+  not deny_admin_after_hours
+}
+```
+
+The policy receives an input object with `usage`, `budget`, `route`, `time`, and
+`tenant` fields. If evaluation returns `true`, the request is allowed. Otherwise
+the server responds with `403` and an error message.
