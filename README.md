@@ -15,17 +15,77 @@ Run the stack with Postgres and Redis using Docker:
 docker compose up --build
 ```
 
+Then open a second terminal and run the worker that persists usage events:
+
+```bash
+npm run worker
+```
+
+To verify connectivity you can check the health endpoint:
+
+```bash
+curl http://localhost:3000/health
+```
+
+To inspect the database state run an interactive `psql` session against the
+Postgres container:
+
+```bash
+docker compose exec postgres psql -U postgres -d budgetguard
+```
+
+## Development & Testing
+
+Install dependencies and run the Prisma migrations:
+
+```bash
+npm install
+npx prisma migrate dev
+```
+
+Run the server in watch mode and start the worker in another terminal:
+
+```bash
+npm run dev
+npm run worker
+```
+
+Lint and test the codebase:
+
+```bash
+npm run lint
+npm test
+```
+
 ## Proxy Endpoints
 
 BudgetGuard forwards OpenAI requests and logs usage locally. Set `OPENAI_KEY` in
 your environment or send `X-OpenAI-Key` per request.
 
+### `POST /v1/completions`
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: demo" \
+  -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
+  http://localhost:3000/v1/completions
 ```
+
+### `POST /v1/chat/completions`
+
+```bash
 curl -X POST \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: demo" \
   -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hi"}]}' \
   http://localhost:3000/v1/chat/completions
+```
+
+### `GET /health`
+
+```bash
+curl http://localhost:3000/health
 ```
 
 Responses are proxied back and an entry is written to the `UsageLedger` table:
