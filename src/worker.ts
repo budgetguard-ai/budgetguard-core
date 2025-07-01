@@ -10,6 +10,11 @@ const BUDGET_PERIODS = getBudgetPeriods();
 
 async function main() {
   const prisma = new PrismaClient();
+  await prisma.tenant.upsert({
+    where: { name: "public" },
+    update: {},
+    create: { name: "public" },
+  });
   const redis = createClient({
     url: process.env.REDIS_URL || "redis://localhost:6379",
   });
@@ -30,10 +35,16 @@ async function main() {
     for (const msg of messages) {
       lastId = msg.id;
       const data = msg.message;
+      const tenantRecord = await prisma.tenant.upsert({
+        where: { name: data.tenant },
+        update: {},
+        create: { name: data.tenant },
+      });
       await prisma.usageLedger.create({
         data: {
           ts: new Date(Number(data.ts)),
           tenant: data.tenant,
+          tenantId: tenantRecord.id,
           route: data.route,
           usd: new Prisma.Decimal(data.usd),
           promptTok: Number(data.promptTok),

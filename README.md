@@ -15,17 +15,77 @@ Run the stack with Postgres and Redis using Docker:
 docker compose up --build
 ```
 
+Then open a second terminal and run the worker that persists usage events:
+
+```bash
+npm run worker
+```
+
+To verify connectivity you can check the health endpoint:
+
+```bash
+curl http://localhost:3000/health
+```
+
+To inspect the database state run an interactive `psql` session against the
+Postgres container:
+
+```bash
+docker compose exec postgres psql -U postgres -d budgetguard
+```
+
+## Development & Testing
+
+Install dependencies and run the Prisma migrations:
+
+```bash
+npm install
+npx prisma migrate dev
+```
+
+Run the server in watch mode and start the worker in another terminal:
+
+```bash
+npm run dev
+npm run worker
+```
+
+Lint and test the codebase:
+
+```bash
+npm run lint
+npm test
+```
+
 ## Proxy Endpoints
 
 BudgetGuard forwards OpenAI requests and logs usage locally. Set `OPENAI_KEY` in
 your environment or send `X-OpenAI-Key` per request.
 
+### `POST /v1/completions`
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: demo" \
+  -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
+  http://localhost:3000/v1/completions
 ```
+
+### `POST /v1/chat/completions`
+
+```bash
 curl -X POST \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: demo" \
   -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hi"}]}' \
   http://localhost:3000/v1/chat/completions
+```
+
+### `GET /health`
+
+```bash
+curl http://localhost:3000/health
 ```
 
 Responses are proxied back and an entry is written to the `UsageLedger` table:
@@ -144,3 +204,32 @@ allow {
 The policy receives an input object with `usage`, `budget`, `route`, `time`, and
 `tenant` fields. If evaluation returns `true`, the request is allowed. Otherwise
 the server responds with `403` and an error message.
+
+## Schema & Data Model
+
+```mermaid
+erDiagram
+  Tenant ||--o{ ApiKey : has
+  Tenant ||--o{ Budget : has
+  Tenant ||--o{ PolicyBundle : has
+  Tenant ||--o{ Alert : has
+  Tenant ||--o{ AuditLog : has
+  Tenant ||--o{ UsageLedger : has
+```
+
+Budgets, API keys, policy bundles, alerts and audit logs are scoped to a tenant.
+Each UsageLedger entry references both the tenant name and its ID for
+compatibility. Budgets track spend for daily, weekly, monthly or custom periods.
+
+Example: query the remaining monthly budget for each tenant:
+
+```sql
+SELECT t.name, b.amountUsd - COALESCE(SUM(l.usd),0) AS remaining
+FROM Tenant t
+LEFT JOIN Budget b ON b.tenantId = t.id AND b.period = 'monthly'
+LEFT JOIN UsageLedger l ON l.tenantId = t.id
+GROUP BY t.name, b.amountUsd;
+```
+
+Run migrations in development with `npx prisma migrate dev` and deploy to
+production with `npm run migrate`. The ERD below summarizes the relationships.
