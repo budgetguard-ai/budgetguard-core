@@ -31,6 +31,23 @@ vi.mock("redis", () => {
   return { createClient: () => instance };
 });
 
+vi.mock("@open-policy-agent/opa-wasm", () => ({
+  default: {
+    loadPolicy: async () => ({
+      evaluate: (input: Record<string, number | string>) => [
+        {
+          result:
+            (input.usage as number) < (input.budget as number) &&
+            !(
+              input.route === "/admin/tenant-usage" &&
+              (input.time as number) > 20
+            ),
+        },
+      ],
+    }),
+  },
+}));
+
 vi.stubGlobal("fetch", async () => ({
   status: 200,
   json: async () => ({ choices: [{ text: "ok" }], model: "gpt-3.5-turbo" }),

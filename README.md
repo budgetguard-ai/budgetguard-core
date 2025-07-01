@@ -94,16 +94,57 @@ Responses are proxied back and an entry is written to the `UsageLedger` table:
 ts | tenant | route | usd | promptTok | compTok
 ```
 
+## Admin API
+
+Authenticate using the `X-Admin-Key` header set to `ADMIN_API_KEY`.
+These endpoints allow automation and management via scripts or a future UI.
+
+### `POST /admin/tenant`
+
+Create a tenant.
+
+### `GET /admin/tenant`
+
+List tenants.
+
+### `GET /admin/tenant/:tenantId`
+
+Tenant details.
+
+### `POST /admin/tenant/:tenantId/budgets`
+
+Create or update budgets for a tenant. Example body:
+
+```json
+{ "budgets": [{ "period": "monthly", "amountUsd": 10 }] }
+```
+
+### `GET /admin/tenant/:tenantId/budgets`
+
+List budgets for a tenant.
+
+### `GET /admin/tenant/:tenantId/usage`
+
+Current usage totals.
+
+### `PUT /admin/budget/:budgetId`
+
+Update a budget.
+
+### `DELETE /admin/budget/:budgetId`
+
+Delete a budget.
+
 ## Cost Calculation
 
 BudgetGuard counts tokens using `tiktoken` and multiplies by the per-model
 OpenAI pricing. The default table:
 
-| Model          | Prompt / 1K | Completion / 1K |
-|---------------|-------------|-----------------|
-| gpt-3.5-turbo | $0.001       | $0.002          |
-| gpt-4         | $0.03        | $0.06           |
-| gpt-4-turbo   | $0.01        | $0.03           |
+| Model         | Prompt / 1K | Completion / 1K |
+| ------------- | ----------- | --------------- |
+| gpt-3.5-turbo | $0.001      | $0.002          |
+| gpt-4         | $0.03       | $0.06           |
+| gpt-4-turbo   | $0.01       | $0.03           |
 
 The total USD for a request is stored in Redis and persisted to Postgres by the
 worker. Configure a monthly cap with `MAX_MONTHLY_USD` or use `BUDGET_PERIODS`

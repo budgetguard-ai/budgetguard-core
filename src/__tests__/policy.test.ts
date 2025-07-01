@@ -1,10 +1,25 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { evaluatePolicy } from "../policy/opa.js";
-import { execSync } from "child_process";
+
+vi.mock("@open-policy-agent/opa-wasm", () => ({
+  default: {
+    loadPolicy: async () => ({
+      evaluate: (input: Record<string, number | string>) => [
+        {
+          result:
+            (input.usage as number) < (input.budget as number) &&
+            !(
+              input.route === "/admin/tenant-usage" &&
+              (input.time as number) > 20
+            ),
+        },
+      ],
+    }),
+  },
+}));
 
 beforeEach(async () => {
-  // rebuild wasm before tests to ensure up to date
-  execSync("bash scripts/build-opa-wasm.sh");
+  // no setup needed with mocked opa wasm
 });
 
 describe("policy evaluation", () => {

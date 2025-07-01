@@ -1,7 +1,8 @@
-import fastify, { type FastifyRequest } from "fastify";
+import fastify, { type FastifyRequest, type FastifyReply } from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import { createClient } from "redis";
 import dotenv from "dotenv";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { countTokensAndCost } from "./token.js";
 import { ledgerKey, getBudgetPeriods } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
@@ -16,6 +17,18 @@ const BUDGET_PERIODS = getBudgetPeriods();
 
 export async function buildServer() {
   const app = fastify({ logger: true });
+
+  let prisma: PrismaClient | undefined;
+  app.addHook("onClose", async () => {
+    await prisma?.$disconnect();
+  });
+  const getPrisma = async () => {
+    if (!prisma) {
+      prisma = new PrismaClient();
+      await prisma.$connect();
+    }
+    return prisma;
+  };
 
   let redisClient: ReturnType<typeof createClient> | undefined;
   if (process.env.REDIS_URL) {
@@ -220,6 +233,177 @@ export async function buildServer() {
     const json = await resp.json();
     return reply.code(resp.status).send(json);
   });
+
+  const adminAuth = async (req: FastifyRequest, reply: FastifyReply) => {
+    const key = req.headers["x-admin-key"] as string | undefined;
+    if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
+      return reply.code(401).send({ error: "Unauthorized" });
+    }
+  };
+
+  app.post("/admin/tenant", { preHandler: adminAuth }, async (req, reply) => {
+    const prisma = await getPrisma();
+    const { name } = req.body as { name?: string };
+    if (!name) {
+      return reply.code(400).send({ error: "Missing name" });
+    }
+    try {
+      const tenant = await prisma.tenant.create({ data: { name } });
+      return reply.send(tenant);
+    } catch {
+      return reply.code(400).send({ error: "Unable to create tenant" });
+    }
+  });
+
+  app.get("/admin/tenant", { preHandler: adminAuth }, async (_req, reply) => {
+    const prisma = await getPrisma();
+    const tenants = await prisma.tenant.findMany();
+    return reply.send(tenants);
+  });
+
+  app.get(
+    "/admin/tenant/:tenantId",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) {
+        return reply.code(404).send({ error: "Tenant not found" });
+      }
+      return reply.send(tenant);
+    },
+  );
+
+  app.post(
+    "/admin/tenant/:tenantId/budgets",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const { budgets } = req.body as {
+        budgets?: Array<{
+          period: string;
+          amountUsd: number;
+          startDate?: string;
+          endDate?: string;
+        }>;
+      };
+      if (!budgets || !Array.isArray(budgets)) {
+        return reply.code(400).send({ error: "Missing budgets" });
+      }
+      const results = [] as unknown[];
+      for (const b of budgets) {
+        if (!b.period || b.amountUsd === undefined) continue;
+        const existing = await prisma.budget.findFirst({
+          where: { tenantId: id, period: b.period },
+        });
+        const data = {
+          tenantId: id,
+          period: b.period,
+          amountUsd: new Prisma.Decimal(b.amountUsd),
+          startDate: b.startDate ? new Date(b.startDate) : undefined,
+          endDate: b.endDate ? new Date(b.endDate) : undefined,
+        };
+        if (existing) {
+          const updated = await prisma.budget.update({
+            where: { id: existing.id },
+            data,
+          });
+          results.push(updated);
+        } else {
+          const created = await prisma.budget.create({ data });
+          results.push(created);
+        }
+      }
+      return reply.send(results);
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/budgets",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const budgets = await prisma.budget.findMany({ where: { tenantId: id } });
+      return reply.send(budgets);
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/usage",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+      const usage: Record<string, number> = {};
+      if (!redisClient) {
+        return reply.send(usage);
+      }
+      for (const p of BUDGET_PERIODS) {
+        const key = ledgerKey(p);
+        const val = await redisClient.get(`ledger:${tenant.name}:${key}`);
+        usage[p] = val ? parseFloat(val) : 0;
+      }
+      return reply.send(usage);
+    },
+  );
+
+  app.put(
+    "/admin/budget/:budgetId",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { budgetId } = req.params as { budgetId: string };
+      const id = Number(budgetId);
+      const data = req.body as Partial<{
+        period: string;
+        amountUsd: number;
+        startDate: string;
+        endDate: string;
+      }>;
+      try {
+        const updated = await prisma.budget.update({
+          where: { id },
+          data: {
+            period: data.period,
+            amountUsd:
+              data.amountUsd !== undefined
+                ? new Prisma.Decimal(data.amountUsd)
+                : undefined,
+            startDate: data.startDate ? new Date(data.startDate) : undefined,
+            endDate: data.endDate ? new Date(data.endDate) : undefined,
+          },
+        });
+        return reply.send(updated);
+      } catch {
+        return reply.code(404).send({ error: "Budget not found" });
+      }
+    },
+  );
+
+  app.delete(
+    "/admin/budget/:budgetId",
+    { preHandler: adminAuth },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { budgetId } = req.params as { budgetId: string };
+      const id = Number(budgetId);
+      try {
+        await prisma.budget.delete({ where: { id } });
+        return reply.send({ ok: true });
+      } catch {
+        return reply.code(404).send({ error: "Budget not found" });
+      }
+    },
+  );
 
   return app;
 }
