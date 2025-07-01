@@ -34,6 +34,12 @@ Postgres container:
 docker compose exec postgres psql -U postgres -d budgetguard
 ```
 
+## API Documentation
+
+Run the server and navigate to [`/docs`](http://localhost:3000/docs) to view the
+interactive Swagger UI. The generated OpenAPI specification can be downloaded
+from [`/docs/json`](http://localhost:3000/docs/json).
+
 ## Development & Testing
 
 Install dependencies and run the Prisma migrations:

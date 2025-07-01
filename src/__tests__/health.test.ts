@@ -18,4 +18,9 @@ describe("GET /health", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
   });
+
+  it("serves docs", async () => {
+    const res = await app.inject({ method: "GET", url: "/docs" });
+    expect(res.statusCode).toBe(200);
+  });
 });

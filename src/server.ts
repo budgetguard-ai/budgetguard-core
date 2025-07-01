@@ -1,5 +1,7 @@
 import fastify, { type FastifyRequest, type FastifyReply } from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import { createClient } from "redis";
 import dotenv from "dotenv";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -17,6 +19,30 @@ const BUDGET_PERIODS = getBudgetPeriods();
 
 export async function buildServer() {
   const app = fastify({ logger: true });
+
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: "BudgetGuard API",
+        description: "Usage proxy and admin endpoints",
+        version: "0.1.0",
+      },
+      components: {
+        securitySchemes: {
+          AdminApiKey: {
+            type: "apiKey",
+            in: "header",
+            name: "X-Admin-Key",
+            description: "Admin API key from .env",
+          },
+        },
+      },
+    },
+  });
+
+  await app.register(swaggerUi, {
+    routePrefix: "/docs",
+  });
 
   let prisma: PrismaClient | undefined;
   app.addHook("onClose", async () => {
@@ -110,129 +136,199 @@ export async function buildServer() {
     reply.send(err);
   });
 
-  app.get("/health", async () => ({ ok: true }));
+  app.get(
+    "/health",
+    {
+      schema: {
+        response: {
+          200: {
+            type: "object",
+            properties: { ok: { type: "boolean" } },
+            required: ["ok"],
+          },
+        },
+      },
+    },
+    async () => ({ ok: true }),
+  );
 
   // proxy OpenAI completions endpoint
-  app.post("/v1/completions", async (req, reply) => {
-    const tenant = (req.headers["x-tenant-id"] as string) || "public";
-    for (const period of BUDGET_PERIODS) {
-      const key = ledgerKey(period);
-      const budget = Number(
-        process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
-          process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
-          DEFAULT_BUDGET,
-      );
-      let usage = 0;
-      if (redisClient) {
-        const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-        if (cur) usage = parseFloat(cur);
-      }
-      const allow = await evaluatePolicy({
-        usage,
-        budget,
-        route: req.routeOptions.url ?? req.url,
-        time: new Date().getHours(),
-        tenant,
-      });
-      app.log.info(
-        {
-          input: {
-            usage,
-            budget,
-            route: req.routeOptions.url ?? req.url,
-            tenant,
+  app.post(
+    "/v1/completions",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            model: { type: "string" },
+            prompt: {},
           },
-          allow,
+          required: ["model"],
         },
-        "policy decision",
-      );
-      if (!allow) {
-        return reply.code(403).send({
-          error: "Request denied by policy",
-          details: { usage, budget },
-        });
-      }
-      if (usage >= budget) {
-        return reply.code(402).send({ error: "Budget exceeded" });
-      }
-    }
-    const apiKey =
-      (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
-    if (!apiKey) {
-      return reply.code(400).send({ error: "Missing OpenAI key" });
-    }
-    const resp = await fetch("https://api.openai.com/v1/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        response: { 200: { type: "object", additionalProperties: true } },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Tenant-Id",
+            schema: { type: "string" },
+            required: false,
+            description: "Tenant identifier for budget/rate limiting",
+          },
+        ],
       },
-      body: JSON.stringify(req.body),
-    });
-    const json = await resp.json();
-    return reply.code(resp.status).send(json);
-  });
+    },
+    async (req, reply) => {
+      const tenant = (req.headers["x-tenant-id"] as string) || "public";
+      for (const period of BUDGET_PERIODS) {
+        const key = ledgerKey(period);
+        const budget = Number(
+          process.env[
+            `BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`
+          ] ??
+            process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
+            DEFAULT_BUDGET,
+        );
+        let usage = 0;
+        if (redisClient) {
+          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
+          if (cur) usage = parseFloat(cur);
+        }
+        const allow = await evaluatePolicy({
+          usage,
+          budget,
+          route: req.routeOptions.url ?? req.url,
+          time: new Date().getHours(),
+          tenant,
+        });
+        app.log.info(
+          {
+            input: {
+              usage,
+              budget,
+              route: req.routeOptions.url ?? req.url,
+              tenant,
+            },
+            allow,
+          },
+          "policy decision",
+        );
+        if (!allow) {
+          return reply.code(403).send({
+            error: "Request denied by policy",
+            details: { usage, budget },
+          });
+        }
+        if (usage >= budget) {
+          return reply.code(402).send({ error: "Budget exceeded" });
+        }
+      }
+      const apiKey =
+        (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
+      if (!apiKey) {
+        return reply.code(400).send({ error: "Missing OpenAI key" });
+      }
+      const resp = await fetch("https://api.openai.com/v1/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const json = await resp.json();
+      return reply.code(resp.status).send(json);
+    },
+  );
 
   // proxy OpenAI chat completions endpoint
-  app.post("/v1/chat/completions", async (req, reply) => {
-    const tenant = (req.headers["x-tenant-id"] as string) || "public";
-    for (const period of BUDGET_PERIODS) {
-      const key = ledgerKey(period);
-      const budget = Number(
-        process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
-          process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
-          DEFAULT_BUDGET,
-      );
-      let usage = 0;
-      if (redisClient) {
-        const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-        if (cur) usage = parseFloat(cur);
-      }
-      const allow = await evaluatePolicy({
-        usage,
-        budget,
-        route: req.routeOptions.url ?? req.url,
-        time: new Date().getHours(),
-        tenant,
-      });
-      app.log.info(
-        {
-          input: {
-            usage,
-            budget,
-            route: req.routeOptions.url ?? req.url,
-            tenant,
+  app.post(
+    "/v1/chat/completions",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            model: { type: "string" },
+            messages: { type: "array" },
           },
-          allow,
+          required: ["model", "messages"],
         },
-        "policy decision",
-      );
-      if (!allow) {
-        return reply.code(403).send({
-          error: "Request denied by policy",
-          details: { usage, budget },
-        });
-      }
-      if (usage >= budget) {
-        return reply.code(402).send({ error: "Budget exceeded" });
-      }
-    }
-    const apiKey =
-      (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
-    if (!apiKey) {
-      return reply.code(400).send({ error: "Missing OpenAI key" });
-    }
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Tenant-Id",
+            schema: { type: "string" },
+            required: false,
+            description: "Tenant identifier for budget/rate limiting",
+          },
+        ],
       },
-      body: JSON.stringify(req.body),
-    });
-    const json = await resp.json();
-    return reply.code(resp.status).send(json);
-  });
+    },
+    async (req, reply) => {
+      const tenant = (req.headers["x-tenant-id"] as string) || "public";
+      for (const period of BUDGET_PERIODS) {
+        const key = ledgerKey(period);
+        const budget = Number(
+          process.env[
+            `BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`
+          ] ??
+            process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
+            DEFAULT_BUDGET,
+        );
+        let usage = 0;
+        if (redisClient) {
+          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
+          if (cur) usage = parseFloat(cur);
+        }
+        const allow = await evaluatePolicy({
+          usage,
+          budget,
+          route: req.routeOptions.url ?? req.url,
+          time: new Date().getHours(),
+          tenant,
+        });
+        app.log.info(
+          {
+            input: {
+              usage,
+              budget,
+              route: req.routeOptions.url ?? req.url,
+              tenant,
+            },
+            allow,
+          },
+          "policy decision",
+        );
+        if (!allow) {
+          return reply.code(403).send({
+            error: "Request denied by policy",
+            details: { usage, budget },
+          });
+        }
+        if (usage >= budget) {
+          return reply.code(402).send({ error: "Budget exceeded" });
+        }
+      }
+      const apiKey =
+        (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
+      if (!apiKey) {
+        return reply.code(400).send({ error: "Missing OpenAI key" });
+      }
+      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const json = await resp.json();
+      return reply.code(resp.status).send(json);
+    },
+  );
 
   const adminAuth = async (req: FastifyRequest, reply: FastifyReply) => {
     const key = req.headers["x-admin-key"] as string | undefined;
@@ -241,29 +337,119 @@ export async function buildServer() {
     }
   };
 
-  app.post("/admin/tenant", { preHandler: adminAuth }, async (req, reply) => {
-    const prisma = await getPrisma();
-    const { name } = req.body as { name?: string };
-    if (!name) {
-      return reply.code(400).send({ error: "Missing name" });
-    }
-    try {
-      const tenant = await prisma.tenant.create({ data: { name } });
-      return reply.send(tenant);
-    } catch {
-      return reply.code(400).send({ error: "Unable to create tenant" });
-    }
-  });
+  app.post(
+    "/admin/tenant",
+    {
+      preHandler: adminAuth,
+      schema: {
+        body: {
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              id: { type: "number" },
+              name: { type: "string" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { name } = req.body as { name?: string };
+      if (!name) {
+        return reply.code(400).send({ error: "Missing name" });
+      }
+      try {
+        const tenant = await prisma.tenant.create({ data: { name } });
+        return reply.send(tenant);
+      } catch {
+        return reply.code(400).send({ error: "Unable to create tenant" });
+      }
+    },
+  );
 
-  app.get("/admin/tenant", { preHandler: adminAuth }, async (_req, reply) => {
-    const prisma = await getPrisma();
-    const tenants = await prisma.tenant.findMany();
-    return reply.send(tenants);
-  });
+  app.get(
+    "/admin/tenant",
+    {
+      preHandler: adminAuth,
+      schema: {
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "number" },
+                name: { type: "string" },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (_req, reply) => {
+      const prisma = await getPrisma();
+      const tenants = await prisma.tenant.findMany();
+      return reply.send(tenants);
+    },
+  );
 
   app.get(
     "/admin/tenant/:tenantId",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              id: { type: "number" },
+              name: { type: "string" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
@@ -278,7 +464,51 @@ export async function buildServer() {
 
   app.post(
     "/admin/tenant/:tenantId/budgets",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            budgets: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  period: { type: "string" },
+                  amountUsd: { type: "number" },
+                  startDate: { type: "string" },
+                  endDate: { type: "string" },
+                },
+                required: ["period", "amountUsd"],
+              },
+            },
+          },
+          required: ["budgets"],
+        },
+        response: {
+          200: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
@@ -324,7 +554,32 @@ export async function buildServer() {
 
   app.get(
     "/admin/tenant/:tenantId/budgets",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
@@ -336,7 +591,29 @@ export async function buildServer() {
 
   app.get(
     "/admin/tenant/:tenantId/usage",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: { type: "object", additionalProperties: { type: "number" } },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
@@ -358,7 +635,36 @@ export async function buildServer() {
 
   app.put(
     "/admin/budget/:budgetId",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { budgetId: { type: "string" } },
+          required: ["budgetId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            period: { type: "string" },
+            amountUsd: { type: "number" },
+            startDate: { type: "string" },
+            endDate: { type: "string" },
+          },
+        },
+        response: { 200: { type: "object", additionalProperties: true } },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { budgetId } = req.params as { budgetId: string };
@@ -391,7 +697,32 @@ export async function buildServer() {
 
   app.delete(
     "/admin/budget/:budgetId",
-    { preHandler: adminAuth },
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { budgetId: { type: "string" } },
+          required: ["budgetId"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: { ok: { type: "boolean" } },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
     async (req, reply) => {
       const prisma = await getPrisma();
       const { budgetId } = req.params as { budgetId: string };
