@@ -83,7 +83,10 @@ vi.mock("@prisma/client", () => {
     }): Promise<T> {
       const idx = this.rows.findIndex((r) => r.id === where.id);
       const cur = this.rows[idx];
-      const updated = { ...cur, ...data } as T;
+      const updated = { ...cur } as T;
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined) (updated as Record<string, unknown>)[k] = v;
+      }
       this.rows[idx] = updated;
       return updated;
     }
