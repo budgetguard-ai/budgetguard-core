@@ -6,17 +6,44 @@ export interface BudgetOptions {
   defaultBudget: number;
 }
 
+export interface BudgetData {
+  amount: number;
+  startDate: Date;
+  endDate: Date;
+}
+
+function serialize(data: BudgetData): string {
+  return JSON.stringify({
+    amount: data.amount,
+    startDate: data.startDate.toISOString(),
+    endDate: data.endDate.toISOString(),
+  });
+}
+
+function deserialize(raw: string): BudgetData {
+  const parsed = JSON.parse(raw) as {
+    amount: number;
+    startDate: string;
+    endDate: string;
+  };
+  return {
+    amount: parsed.amount,
+    startDate: new Date(parsed.startDate),
+    endDate: new Date(parsed.endDate),
+  };
+}
+
 export async function readBudget({
   tenant,
   period,
   prisma,
   redis,
   defaultBudget,
-}: BudgetOptions): Promise<number> {
+}: BudgetOptions): Promise<BudgetData> {
   const key = `budget:${tenant}:${period}`;
   if (redis) {
     const hit = await redis.get(key);
-    if (hit) return parseFloat(hit);
+    if (hit) return deserialize(hit);
   }
   const tenantRecord = await prisma.tenant.findFirst({
     where: { name: tenant },
@@ -26,27 +53,58 @@ export async function readBudget({
       where: { tenantId: tenantRecord.id, period },
     });
     if (fromDb) {
-      const amt = parseFloat(fromDb.amountUsd.toString());
-      if (redis) await redis.set(key, String(amt));
-      return amt;
+      const data: BudgetData = {
+        amount: parseFloat(fromDb.amountUsd.toString()),
+        startDate: fromDb.startDate ?? new Date(),
+        endDate: fromDb.endDate ?? new Date(),
+      };
+      if (redis) await redis.set(key, serialize(data));
+      return data;
     }
   }
-  const env =
+
+  const amountEnv =
     process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
     process.env[`BUDGET_${period.toUpperCase()}_USD`];
-  const amt = env ? Number(env) : defaultBudget;
-  if (redis) await redis.set(key, String(amt));
-  return amt;
+  const amount = amountEnv ? Number(amountEnv) : defaultBudget;
+  const now = new Date();
+  let startDate: Date;
+  let endDate: Date;
+  if (period === "monthly") {
+    startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    endDate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+    );
+  } else if (period === "daily") {
+    startDate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    endDate = new Date(startDate);
+  } else {
+    const s = process.env.BUDGET_START_DATE;
+    const e = process.env.BUDGET_END_DATE;
+    if (!s || !e) {
+      throw new Error("Missing custom budget window");
+    }
+    startDate = new Date(s);
+    endDate = new Date(e);
+  }
+  const data: BudgetData = { amount, startDate, endDate };
+  if (redis) await redis.set(key, serialize(data));
+  return data;
 }
 
 export async function writeBudget(
   tenant: string,
   period: string,
   amount: number,
+  startDate: Date,
+  endDate: Date,
   redis?: ReturnType<typeof import("redis").createClient>,
 ): Promise<void> {
   if (redis) {
-    await redis.set(`budget:${tenant}:${period}`, String(amount));
+    const data: BudgetData = { amount, startDate, endDate };
+    await redis.set(`budget:${tenant}:${period}`, serialize(data));
   }
 }
 

@@ -6,7 +6,7 @@ import { createClient } from "redis";
 import dotenv from "dotenv";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { countTokensAndCost } from "./token.js";
-import { ledgerKey, getBudgetPeriods } from "./ledger.js";
+import { ledgerKey, getBudgetPeriods, ALLOWED_PERIODS } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 
@@ -106,8 +106,18 @@ export async function buildServer() {
       compTok: compTok.toString(),
     });
     const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    const prismaClient = await getPrisma();
     for (const period of BUDGET_PERIODS) {
-      const key = ledgerKey(period);
+      const { startDate, endDate } = await readBudget({
+        tenant,
+        period,
+        prisma: prismaClient,
+        redis: redisClient,
+        defaultBudget: DEFAULT_BUDGET,
+      });
+      const now = new Date();
+      if (now < startDate || now > endDate) continue;
+      const key = ledgerKey(period, now, { startDate, endDate });
       await redisClient.incrByFloat(`ledger:${tenant}:${key}`, usd);
     }
     return payload;
@@ -182,14 +192,16 @@ export async function buildServer() {
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
       for (const period of BUDGET_PERIODS) {
-        const key = ledgerKey(period);
-        const budget = await readBudget({
+        const { amount, startDate, endDate } = await readBudget({
           tenant,
           period,
           prisma,
           redis: redisClient,
           defaultBudget: DEFAULT_BUDGET,
         });
+        const now = new Date();
+        if (now < startDate || now > endDate) continue;
+        const key = ledgerKey(period, now, { startDate, endDate });
         let usage = 0;
         if (redisClient) {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
@@ -197,7 +209,7 @@ export async function buildServer() {
         }
         const allow = await evaluatePolicy({
           usage,
-          budget,
+          budget: amount,
           route: req.routeOptions.url ?? req.url,
           time: new Date().getHours(),
           tenant,
@@ -206,7 +218,7 @@ export async function buildServer() {
           {
             input: {
               usage,
-              budget,
+              budget: amount,
               route: req.routeOptions.url ?? req.url,
               tenant,
             },
@@ -217,10 +229,10 @@ export async function buildServer() {
         if (!allow) {
           return reply.code(403).send({
             error: "Request denied by policy",
-            details: { usage, budget },
+            details: { usage, budget: amount },
           });
         }
-        if (usage >= budget) {
+        if (usage >= amount) {
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
@@ -273,14 +285,16 @@ export async function buildServer() {
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
       for (const period of BUDGET_PERIODS) {
-        const key = ledgerKey(period);
-        const budget = await readBudget({
+        const { amount, startDate, endDate } = await readBudget({
           tenant,
           period,
           prisma,
           redis: redisClient,
           defaultBudget: DEFAULT_BUDGET,
         });
+        const now = new Date();
+        if (now < startDate || now > endDate) continue;
+        const key = ledgerKey(period, now, { startDate, endDate });
         let usage = 0;
         if (redisClient) {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
@@ -288,7 +302,7 @@ export async function buildServer() {
         }
         const allow = await evaluatePolicy({
           usage,
-          budget,
+          budget: amount,
           route: req.routeOptions.url ?? req.url,
           time: new Date().getHours(),
           tenant,
@@ -297,7 +311,7 @@ export async function buildServer() {
           {
             input: {
               usage,
-              budget,
+              budget: amount,
               route: req.routeOptions.url ?? req.url,
               tenant,
             },
@@ -308,10 +322,10 @@ export async function buildServer() {
         if (!allow) {
           return reply.code(403).send({
             error: "Request denied by policy",
-            details: { usage, budget },
+            details: { usage, budget: amount },
           });
         }
-        if (usage >= budget) {
+        if (usage >= amount) {
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
@@ -534,6 +548,29 @@ export async function buildServer() {
       const results = [] as unknown[];
       for (const b of budgets) {
         if (!b.period || b.amountUsd === undefined) continue;
+        if (!ALLOWED_PERIODS.includes(b.period as ALLOWED_PERIODS[number])) {
+          continue;
+        }
+        let startDate: Date | undefined;
+        let endDate: Date | undefined;
+        const now = new Date();
+        if (b.period === "monthly") {
+          startDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+          );
+          endDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+          );
+        } else if (b.period === "daily") {
+          startDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+          );
+          endDate = new Date(startDate);
+        } else {
+          if (!b.startDate || !b.endDate) continue;
+          startDate = new Date(b.startDate);
+          endDate = new Date(b.endDate);
+        }
         const existing = await prisma.budget.findFirst({
           where: { tenantId: id, period: b.period },
         });
@@ -541,8 +578,8 @@ export async function buildServer() {
           tenantId: id,
           period: b.period,
           amountUsd: new Prisma.Decimal(b.amountUsd),
-          startDate: b.startDate ? new Date(b.startDate) : undefined,
-          endDate: b.endDate ? new Date(b.endDate) : undefined,
+          startDate,
+          endDate,
         };
         if (existing) {
           const updated = await prisma.budget.update({
@@ -554,6 +591,8 @@ export async function buildServer() {
             tenantRec.name,
             updated.period,
             parseFloat(updated.amountUsd.toString()),
+            startDate!,
+            endDate!,
             redisClient,
           );
         } else {
@@ -563,6 +602,8 @@ export async function buildServer() {
             tenantRec.name,
             created.period,
             parseFloat(created.amountUsd.toString()),
+            startDate!,
+            endDate!,
             redisClient,
           );
         }
@@ -644,7 +685,14 @@ export async function buildServer() {
         return reply.send(usage);
       }
       for (const p of BUDGET_PERIODS) {
-        const key = ledgerKey(p);
+        const { startDate, endDate } = await readBudget({
+          tenant: tenant.name,
+          period: p,
+          prisma,
+          redis: redisClient,
+          defaultBudget: DEFAULT_BUDGET,
+        });
+        const key = ledgerKey(p, new Date(), { startDate, endDate });
         const val = await redisClient.get(`ledger:${tenant.name}:${key}`);
         usage[p] = val ? parseFloat(val) : 0;
       }
@@ -695,6 +743,29 @@ export async function buildServer() {
         endDate: string;
       }>;
       try {
+        let startDate: Date | undefined = data.startDate
+          ? new Date(data.startDate)
+          : undefined;
+        let endDate: Date | undefined = data.endDate
+          ? new Date(data.endDate)
+          : undefined;
+        if (data.period === "monthly") {
+          const now = new Date();
+          startDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+          );
+          endDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+          );
+        } else if (data.period === "daily") {
+          const now = new Date();
+          startDate = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+          );
+          endDate = new Date(startDate);
+        } else if (data.period === "custom" && (!startDate || !endDate)) {
+          throw new Error("custom period requires dates");
+        }
         const updated = await prisma.budget.update({
           where: { id },
           data: {
@@ -703,8 +774,8 @@ export async function buildServer() {
               data.amountUsd !== undefined
                 ? new Prisma.Decimal(data.amountUsd)
                 : undefined,
-            startDate: data.startDate ? new Date(data.startDate) : undefined,
-            endDate: data.endDate ? new Date(data.endDate) : undefined,
+            startDate,
+            endDate,
           },
         });
         const tenantRec = await prisma.tenant.findUnique({
@@ -715,6 +786,8 @@ export async function buildServer() {
             tenantRec.name,
             updated.period,
             parseFloat(updated.amountUsd.toString()),
+            updated.startDate!,
+            updated.endDate!,
             redisClient,
           );
         }

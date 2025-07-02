@@ -168,7 +168,8 @@ describe("admin endpoints", () => {
     expect(res1.statusCode).toBe(200);
     const [budget] = res1.json();
     expect(budget.period).toBe("monthly");
-    expect(await redis.get("budget:t1:monthly")).toBe("10");
+    const cached = JSON.parse((await redis.get("budget:t1:monthly"))!);
+    expect(cached.amount).toBe(10);
 
     const res2 = await app.inject({
       method: "GET",
@@ -184,7 +185,8 @@ describe("admin endpoints", () => {
       payload: { amountUsd: 20 },
     });
     expect(upd.json().amountUsd).toBe("20");
-    expect(await redis.get("budget:t1:monthly")).toBe("20");
+    const cachedUpd = JSON.parse((await redis.get("budget:t1:monthly"))!);
+    expect(cachedUpd.amount).toBe(20);
 
     await app.inject({
       method: "DELETE",

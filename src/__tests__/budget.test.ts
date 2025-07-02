@@ -190,7 +190,14 @@ describe("budget enforcement", () => {
     process.env.BUDGET_DAILY_USD = "0.000005";
     const key = ledgerKey("daily");
     await redis.set(`ledger:public:${key}`, "0.000009");
-    await redis.set("budget:public:daily", "0.00002");
+    await redis.set(
+      "budget:public:daily",
+      JSON.stringify({
+        amount: 0.00002,
+        startDate: new Date().toISOString(),
+        endDate: new Date().toISOString(),
+      }),
+    );
     const res = await app.inject({
       method: "POST",
       url: "/v1/completions",
@@ -221,6 +228,7 @@ describe("budget enforcement", () => {
       payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
-    expect(await redis.get("budget:t1:daily")).toBe("0.00003");
+    const cached = JSON.parse((await redis.get("budget:t1:daily"))!);
+    expect(cached.amount).toBe(0.00003);
   });
 });
