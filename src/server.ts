@@ -4,9 +4,14 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { createClient } from "redis";
 import dotenv from "dotenv";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { countTokensAndCost } from "./token.js";
-import { ledgerKey, getBudgetPeriods, ALLOWED_PERIODS } from "./ledger.js";
+import {
+  ledgerKey,
+  getBudgetPeriods,
+  ALLOWED_PERIODS,
+  type Period,
+} from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 
@@ -548,7 +553,7 @@ export async function buildServer() {
       const results = [] as unknown[];
       for (const b of budgets) {
         if (!b.period || b.amountUsd === undefined) continue;
-        if (!ALLOWED_PERIODS.includes(b.period as ALLOWED_PERIODS[number])) {
+        if (!ALLOWED_PERIODS.includes(b.period as Period)) {
           continue;
         }
         let startDate: Date | undefined;
@@ -585,7 +590,7 @@ export async function buildServer() {
         const data = {
           tenantId: id,
           period: b.period,
-          amountUsd: new Prisma.Decimal(b.amountUsd),
+          amountUsd: b.amountUsd,
           startDate,
           endDate,
         };
@@ -786,10 +791,7 @@ export async function buildServer() {
           where: { id },
           data: {
             period: data.period,
-            amountUsd:
-              data.amountUsd !== undefined
-                ? new Prisma.Decimal(data.amountUsd)
-                : undefined,
+            amountUsd: data.amountUsd,
             startDate,
             endDate,
           },

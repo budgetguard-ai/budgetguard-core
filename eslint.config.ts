@@ -29,7 +29,7 @@ export default [
       parser: tsParser,
       ecmaVersion: 2022,
       sourceType: "module",
-      project: "./tsconfig.json",
+      project: "./tsconfig.eslint.json",
     },
     rules: {
       // Custom rules can go here

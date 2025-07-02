@@ -184,7 +184,7 @@ describe("admin endpoints", () => {
       headers: { "x-admin-key": "adminkey" },
       payload: { amountUsd: 20 },
     });
-    expect(upd.json().amountUsd).toBe("20");
+    expect(upd.json().amountUsd).toBe(20);
     const cachedUpd = JSON.parse((await redis.get("budget:t1:monthly"))!);
     expect(cachedUpd.amount).toBe(20);
 
