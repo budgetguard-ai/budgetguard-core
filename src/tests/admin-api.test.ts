@@ -16,6 +16,9 @@ vi.mock("redis", () => {
     async set(key: string, val: string) {
       this.data[key] = val;
     }
+    async del(key: string) {
+      delete this.data[key];
+    }
     async incrByFloat(key: string, val: number) {
       const cur = parseFloat(this.data[key] ?? "0");
       this.data[key] = String(cur + val);
@@ -159,6 +162,7 @@ describe("admin endpoints", () => {
     expect(res1.statusCode).toBe(200);
     const [budget] = res1.json();
     expect(budget.period).toBe("monthly");
+    expect(await redis.get("budget:t1:monthly")).toBe("10");
 
     const res2 = await app.inject({
       method: "GET",
@@ -174,12 +178,14 @@ describe("admin endpoints", () => {
       payload: { amountUsd: 20 },
     });
     expect(upd.json().amountUsd).toBe("20");
+    expect(await redis.get("budget:t1:monthly")).toBe("20");
 
     await app.inject({
       method: "DELETE",
       url: `/admin/budget/${budget.id}`,
       headers: { "x-admin-key": "adminkey" },
     });
+    expect(await redis.get("budget:t1:monthly")).toBeNull();
     const list = await app.inject({
       method: "GET",
       url: "/admin/tenant/1/budgets",

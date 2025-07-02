@@ -162,8 +162,11 @@ Set `DEFAULT_BUDGET_USD` to limit spend for all tenants. Provide one or more
 periods via `BUDGET_PERIODS` (e.g. `daily,monthly`) and specify budgets for each
 with variables like `BUDGET_DAILY_USD` or `BUDGET_MONTHLY_USD`. For custom
 ranges also supply `BUDGET_START_DATE` and `BUDGET_END_DATE`. Override tenants
-with `BUDGET_<PERIOD>_<TENANT>` variables. When a request would exceed any
-budget, the server responds with:
+with `BUDGET_<PERIOD>_<TENANT>` variables. Budgets are cached in Redis using
+`budget:<tenant>:<period>` keys and loaded from Postgres on a miss. If no record
+is found the environment variables above or `DEFAULT_BUDGET_USD` apply. Admin
+API updates write through to both Postgres and Redis. When a request would
+exceed any budget, the server responds with:
 
 ```json
 HTTP/1.1 402 Payment Required

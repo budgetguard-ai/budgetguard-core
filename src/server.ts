@@ -8,6 +8,7 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { countTokensAndCost } from "./token.js";
 import { ledgerKey, getBudgetPeriods } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
+import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 
 dotenv.config();
 
@@ -179,15 +180,16 @@ export async function buildServer() {
     },
     async (req, reply) => {
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
+      const prisma = await getPrisma();
       for (const period of BUDGET_PERIODS) {
         const key = ledgerKey(period);
-        const budget = Number(
-          process.env[
-            `BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`
-          ] ??
-            process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
-            DEFAULT_BUDGET,
-        );
+        const budget = await readBudget({
+          tenant,
+          period,
+          prisma,
+          redis: redisClient,
+          defaultBudget: DEFAULT_BUDGET,
+        });
         let usage = 0;
         if (redisClient) {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
@@ -269,15 +271,16 @@ export async function buildServer() {
     },
     async (req, reply) => {
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
+      const prisma = await getPrisma();
       for (const period of BUDGET_PERIODS) {
         const key = ledgerKey(period);
-        const budget = Number(
-          process.env[
-            `BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`
-          ] ??
-            process.env[`BUDGET_${period.toUpperCase()}_USD`] ??
-            DEFAULT_BUDGET,
-        );
+        const budget = await readBudget({
+          tenant,
+          period,
+          prisma,
+          redis: redisClient,
+          defaultBudget: DEFAULT_BUDGET,
+        });
         let usage = 0;
         if (redisClient) {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
@@ -513,6 +516,10 @@ export async function buildServer() {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
       const id = Number(tenantId);
+      const tenantRec = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenantRec) {
+        return reply.code(404).send({ error: "Tenant not found" });
+      }
       const { budgets } = req.body as {
         budgets?: Array<{
           period: string;
@@ -543,9 +550,21 @@ export async function buildServer() {
             data,
           });
           results.push(updated);
+          await writeBudget(
+            tenantRec.name,
+            updated.period,
+            parseFloat(updated.amountUsd.toString()),
+            redisClient,
+          );
         } else {
           const created = await prisma.budget.create({ data });
           results.push(created);
+          await writeBudget(
+            tenantRec.name,
+            created.period,
+            parseFloat(created.amountUsd.toString()),
+            redisClient,
+          );
         }
       }
       return reply.send(results);
@@ -688,6 +707,17 @@ export async function buildServer() {
             endDate: data.endDate ? new Date(data.endDate) : undefined,
           },
         });
+        const tenantRec = await prisma.tenant.findUnique({
+          where: { id: updated.tenantId },
+        });
+        if (tenantRec) {
+          await writeBudget(
+            tenantRec.name,
+            updated.period,
+            parseFloat(updated.amountUsd.toString()),
+            redisClient,
+          );
+        }
         return reply.send(updated);
       } catch {
         return reply.code(404).send({ error: "Budget not found" });
@@ -728,7 +758,13 @@ export async function buildServer() {
       const { budgetId } = req.params as { budgetId: string };
       const id = Number(budgetId);
       try {
-        await prisma.budget.delete({ where: { id } });
+        const deleted = await prisma.budget.delete({ where: { id } });
+        const tenantRec = await prisma.tenant.findUnique({
+          where: { id: deleted.tenantId },
+        });
+        if (tenantRec) {
+          await deleteBudget(tenantRec.name, deleted.period, redisClient);
+        }
         return reply.send({ ok: true });
       } catch {
         return reply.code(404).send({ error: "Budget not found" });
