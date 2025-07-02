@@ -559,13 +559,21 @@ export async function buildServer() {
             Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
           );
           endDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+            Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth() + 1,
+              0,
+              23,
+              59,
+              59,
+              999,
+            ),
           );
         } else if (b.period === "daily") {
           startDate = new Date(
             Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
           );
-          endDate = new Date(startDate);
+          endDate = new Date(startDate.getTime() + 86400000 - 1);
         } else {
           if (!b.startDate || !b.endDate) continue;
           startDate = new Date(b.startDate);
@@ -755,14 +763,22 @@ export async function buildServer() {
             Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
           );
           endDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+            Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth() + 1,
+              0,
+              23,
+              59,
+              59,
+              999,
+            ),
           );
         } else if (data.period === "daily") {
           const now = new Date();
           startDate = new Date(
             Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
           );
-          endDate = new Date(startDate);
+          endDate = new Date(startDate.getTime() + 86400000 - 1);
         } else if (data.period === "custom" && (!startDate || !endDate)) {
           throw new Error("custom period requires dates");
         }

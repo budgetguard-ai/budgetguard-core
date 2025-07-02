@@ -73,13 +73,13 @@ export async function readBudget({
   if (period === "monthly") {
     startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     endDate = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999),
     );
   } else if (period === "daily") {
     startDate = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
-    endDate = new Date(startDate);
+    endDate = new Date(startDate.getTime() + 86400000 - 1);
   } else {
     const s = process.env.BUDGET_START_DATE;
     const e = process.env.BUDGET_END_DATE;
