@@ -32,3 +32,20 @@ fast enforcement. The worker and admin API keep Postgres as the source of truth
 and update Redis whenever budgets change. When a budget is requested, the server
 checks Redis first, then falls back to Postgres and finally environment
 defaults.
+
+At request time the server gathers the current usage and budget for all
+configured periods, building a single input object for the OPA policy engine:
+
+```json
+{
+  "tenant": "t1",
+  "route": "/v1/completions",
+  "time": 12,
+  "budgets": [
+    { "period": "daily", "usage": 1, "budget": 10, "start": "...", "end": "..." }
+  ]
+}
+```
+
+OPA returns `true` only if every period is under budget and no other rule
+denies the request. The server enforces the decision before proxying to OpenAI.

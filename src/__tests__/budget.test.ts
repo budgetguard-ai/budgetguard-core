@@ -121,10 +121,16 @@ vi.mock("@prisma/client", () => {
 vi.mock("@open-policy-agent/opa-wasm", () => ({
   default: {
     loadPolicy: async () => ({
-      evaluate: (input: Record<string, number | string>) => [
+      evaluate: (input: Record<string, unknown>) => [
         {
           result:
-            (input.usage as number) < (input.budget as number) &&
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            Array.isArray((input as any).budgets) &&
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (input as any).budgets.every(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (b: any) => b.usage < b.budget,
+            ) &&
             !(
               input.route === "/admin/tenant-usage" &&
               (input.time as number) > 20
@@ -180,10 +186,7 @@ describe("budget enforcement", () => {
       payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({
-      error: "Request denied by policy",
-      details: { usage: 0.00001, budget: 0.00001 },
-    });
+    expect(res.json()).toEqual({ error: "Request denied by policy" });
   });
 
   it("uses redis cached budget on hit", async () => {
