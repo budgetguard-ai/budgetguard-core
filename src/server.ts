@@ -238,6 +238,7 @@ export async function buildServer() {
       },
     },
     async (req, reply) => {
+      const startDecision = process.hrtime.bigint();
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
       const budgets = [] as Array<{
@@ -280,13 +281,29 @@ export async function buildServer() {
       const allow = await evaluatePolicy(input);
       app.log.info({ input, allow }, "policy decision");
       if (!allow) {
+        const decisionMs =
+          Number(process.hrtime.bigint() - startDecision) / 1e6;
+        for (const b of budgets) {
+          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
+        }
+        app.log.warn({ decisionMs }, "policy denied");
         return reply.code(403).send({ error: "Request denied by policy" });
       }
       for (const b of budgets) {
         if (b.usage >= b.budget) {
+          const decisionMs =
+            Number(process.hrtime.bigint() - startDecision) / 1e6;
+          app.log.warn({
+            period: b.period,
+            usage: b.usage,
+            budget: b.budget,
+            decisionMs,
+          });
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
+      app.log.info({ decisionMs }, "allow request");
       const apiKey =
         (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
       if (!apiKey) {
@@ -333,6 +350,7 @@ export async function buildServer() {
       },
     },
     async (req, reply) => {
+      const startDecision = process.hrtime.bigint();
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
       const budgets = [] as Array<{
@@ -375,13 +393,29 @@ export async function buildServer() {
       const allow = await evaluatePolicy(input);
       app.log.info({ input, allow }, "policy decision");
       if (!allow) {
+        const decisionMs =
+          Number(process.hrtime.bigint() - startDecision) / 1e6;
+        for (const b of budgets) {
+          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
+        }
+        app.log.warn({ decisionMs }, "policy denied");
         return reply.code(403).send({ error: "Request denied by policy" });
       }
       for (const b of budgets) {
         if (b.usage >= b.budget) {
+          const decisionMs =
+            Number(process.hrtime.bigint() - startDecision) / 1e6;
+          app.log.warn({
+            period: b.period,
+            usage: b.usage,
+            budget: b.budget,
+            decisionMs,
+          });
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
+      app.log.info({ decisionMs }, "allow request");
       const apiKey =
         (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
       if (!apiKey) {
