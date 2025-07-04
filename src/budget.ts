@@ -88,6 +88,7 @@ export async function readBudget({
     }
     startDate = new Date(s);
     endDate = new Date(e);
+    endDate.setUTCHours(23, 59, 59, 999);
   }
   const data: BudgetData = { amount, startDate, endDate };
   if (redis) await redis.set(key, serialize(data));

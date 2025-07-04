@@ -71,13 +71,33 @@ export async function buildServer() {
   app.addHook("onSend", async (req, _reply, payload) => {
     if (!redisClient) return payload;
 
+    const route = req.routeOptions.url ?? req.url;
+    if (
+      route !== "/v1/completions" &&
+      route !== "/v1/chat/completions"
+    ) {
+      return payload;
+    }
+
+    const statusCode = _reply.statusCode;
+    let resp: any;
+    try {
+      resp = typeof payload === "string" ? JSON.parse(payload) : payload;
+    } catch {
+      resp = payload;
+    }
+
+    // Only increment usage if status is 200 and no error in response
+    if (statusCode !== 200 || (resp && resp.error)) {
+      return payload;
+    }
+
     let usd = 0;
     let promptTok = 0;
     let compTok = 0;
 
     try {
       const body = req.body as Record<string, unknown> | undefined;
-      const resp = typeof payload === "string" ? JSON.parse(payload) : payload;
       const model = (body?.model as string) || (resp?.model as string);
       if (model && (body?.prompt || body?.messages)) {
         const {
@@ -554,7 +574,7 @@ export async function buildServer() {
       for (const b of budgets) {
         if (!b.period || b.amountUsd === undefined) continue;
         if (!ALLOWED_PERIODS.includes(b.period as Period)) {
-          continue;
+          return reply.code(400).send({ error: "Invalid period. Allowed: daily, monthly, custom" });
         }
         let startDate: Date | undefined;
         let endDate: Date | undefined;
@@ -579,10 +599,24 @@ export async function buildServer() {
             Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
           );
           endDate = new Date(startDate.getTime() + 86400000 - 1);
-        } else {
-          if (!b.startDate || !b.endDate) continue;
+        } else if (b.period === "custom") {
+          if (
+            !b.startDate ||
+            !b.endDate ||
+            isNaN(new Date(b.startDate).getTime()) ||
+            isNaN(new Date(b.endDate).getTime())
+          ) {
+            return reply
+              .code(400)
+              .send({ error: "Custom period requires valid startDate and endDate" });
+          }
+          // Set start to 00:00:00.000 and end to 23:59:59.999 for the end date
           startDate = new Date(b.startDate);
           endDate = new Date(b.endDate);
+          endDate.setUTCHours(23, 59, 59, 999);
+        }
+        if (endDate && startDate && endDate < startDate) {
+          return reply.code(400).send({ error: "endDate must be equal to or after startDate" });
         }
         const existing = await prisma.budget.findFirst({
           where: { tenantId: id, period: b.period },
