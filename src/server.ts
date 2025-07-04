@@ -1,4 +1,8 @@
-import fastify, { type FastifyRequest, type FastifyReply } from "fastify";
+import fastify, {
+  type FastifyRequest,
+  type FastifyReply,
+  type FastifyInstance,
+} from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
@@ -68,27 +72,35 @@ export async function buildServer() {
     await redisClient.connect();
   }
 
+  // Define types for OpenAI response
+  type OpenAIChoice = { text?: string; message?: { content?: string } };
+  type OpenAIResponse = {
+    choices?: OpenAIChoice[];
+    model?: string;
+    error?: unknown;
+  };
+
   app.addHook("onSend", async (req, _reply, payload) => {
     if (!redisClient) return payload;
 
     const route = req.routeOptions.url ?? req.url;
-    if (
-      route !== "/v1/completions" &&
-      route !== "/v1/chat/completions"
-    ) {
+    if (route !== "/v1/completions" && route !== "/v1/chat/completions") {
       return payload;
     }
 
     const statusCode = _reply.statusCode;
-    let resp: any;
+    let resp: Record<string, unknown> | string;
     try {
       resp = typeof payload === "string" ? JSON.parse(payload) : payload;
     } catch {
-      resp = payload;
+      resp = payload as string | Record<string, unknown>;
     }
 
     // Only increment usage if status is 200 and no error in response
-    if (statusCode !== 200 || (resp && resp.error)) {
+    if (
+      statusCode !== 200 ||
+      (resp && (resp as Record<string, unknown>).error)
+    ) {
       return payload;
     }
 
@@ -98,7 +110,20 @@ export async function buildServer() {
 
     try {
       const body = req.body as Record<string, unknown> | undefined;
-      const model = (body?.model as string) || (resp?.model as string);
+      const model =
+        (body?.model as string) ||
+        (typeof resp === "object" && resp !== null && "model" in resp
+          ? (resp as OpenAIResponse).model
+          : undefined);
+
+      let completion: string | undefined = undefined;
+      if (typeof resp === "object" && resp !== null && "choices" in resp) {
+        const choices = (resp as OpenAIResponse).choices ?? [];
+        if (choices.length > 0) {
+          completion = choices[0]?.text ?? choices[0]?.message?.content;
+        }
+      }
+
       if (model && (body?.prompt || body?.messages)) {
         const {
           promptTokens,
@@ -110,9 +135,7 @@ export async function buildServer() {
             (body?.prompt as string) ||
             ((body?.messages as Array<{ role: string; content: string }>) ??
               []),
-          completion:
-            (resp?.choices?.[0]?.text as string) ||
-            (resp?.choices?.[0]?.message?.content as string),
+          completion,
         });
         usd = cost;
         promptTok = promptTokens;
@@ -149,18 +172,19 @@ export async function buildServer() {
   });
 
   await app.register(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rateLimit as any,
+    rateLimit as unknown as (
+      instance: FastifyInstance,
+      opts: Record<string, unknown>,
+      done: (err?: Error) => void,
+    ) => void,
     {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      client: redisClient as any,
+      client: redisClient,
       max: Number(process.env.MAX_REQS_PER_MIN || 100),
       timeWindow: "1 minute",
       keyGenerator: (req: FastifyRequest) =>
         (req.headers["x-tenant-id"] as string) || "public",
       errorResponseBuilder: () => ({ error: "Rate limit exceeded" }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
+    },
   );
 
   app.setErrorHandler((err, _req, reply) => {
@@ -574,7 +598,9 @@ export async function buildServer() {
       for (const b of budgets) {
         if (!b.period || b.amountUsd === undefined) continue;
         if (!ALLOWED_PERIODS.includes(b.period as Period)) {
-          return reply.code(400).send({ error: "Invalid period. Allowed: daily, monthly, custom" });
+          return reply
+            .code(400)
+            .send({ error: "Invalid period. Allowed: daily, monthly, custom" });
         }
         let startDate: Date | undefined;
         let endDate: Date | undefined;
@@ -606,9 +632,9 @@ export async function buildServer() {
             isNaN(new Date(b.startDate).getTime()) ||
             isNaN(new Date(b.endDate).getTime())
           ) {
-            return reply
-              .code(400)
-              .send({ error: "Custom period requires valid startDate and endDate" });
+            return reply.code(400).send({
+              error: "Custom period requires valid startDate and endDate",
+            });
           }
           // Set start to 00:00:00.000 and end to 23:59:59.999 for the end date
           startDate = new Date(b.startDate);
@@ -616,7 +642,9 @@ export async function buildServer() {
           endDate.setUTCHours(23, 59, 59, 999);
         }
         if (endDate && startDate && endDate < startDate) {
-          return reply.code(400).send({ error: "endDate must be equal to or after startDate" });
+          return reply
+            .code(400)
+            .send({ error: "endDate must be equal to or after startDate" });
         }
         const existing = await prisma.budget.findFirst({
           where: { tenantId: id, period: b.period },
