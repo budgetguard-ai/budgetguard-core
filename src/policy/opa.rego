@@ -1,6 +1,6 @@
 package budgetguard.policy
 
-default allow = false
+default allow := false
 
 # Allow only when under budget and not accessing admin routes after hours
 allow if {

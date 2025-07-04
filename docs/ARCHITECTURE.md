@@ -26,3 +26,9 @@ npm run migrate
 
 The ERD is included in the README for reference.
 All tables include timestamp fields for auditing and change tracking.
+
+Budget amounts are cached in Redis using `budget:<tenant>:<period>` keys for
+fast enforcement. The worker and admin API keep Postgres as the source of truth
+and update Redis whenever budgets change. When a budget is requested, the server
+checks Redis first, then falls back to Postgres and finally environment
+defaults.

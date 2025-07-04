@@ -16,6 +16,9 @@ vi.mock("redis", () => {
     async set(key: string, val: string) {
       this.data[key] = val;
     }
+    async del(key: string) {
+      delete this.data[key];
+    }
     async incrByFloat(key: string, val: number) {
       const cur = parseFloat(this.data[key] ?? "0");
       this.data[key] = String(cur + val);
@@ -80,12 +83,18 @@ vi.mock("@prisma/client", () => {
     }): Promise<T> {
       const idx = this.rows.findIndex((r) => r.id === where.id);
       const cur = this.rows[idx];
-      const updated = { ...cur, ...data } as T;
+      const updated = { ...cur } as T;
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined) (updated as Record<string, unknown>)[k] = v;
+      }
       this.rows[idx] = updated;
       return updated;
     }
-    async delete({ where }: { where: { id: number } }): Promise<void> {
-      this.rows = this.rows.filter((r) => r.id !== where.id);
+    async delete({ where }: { where: { id: number } }): Promise<T | null> {
+      const idx = this.rows.findIndex((r) => r.id === where.id);
+      if (idx === -1) return null;
+      const [removed] = this.rows.splice(idx, 1);
+      return removed as T;
     }
   }
   class FakePrisma {
@@ -159,6 +168,8 @@ describe("admin endpoints", () => {
     expect(res1.statusCode).toBe(200);
     const [budget] = res1.json();
     expect(budget.period).toBe("monthly");
+    const cached = JSON.parse((await redis.get("budget:t1:monthly"))!);
+    expect(cached.amount).toBe(10);
 
     const res2 = await app.inject({
       method: "GET",
@@ -173,13 +184,16 @@ describe("admin endpoints", () => {
       headers: { "x-admin-key": "adminkey" },
       payload: { amountUsd: 20 },
     });
-    expect(upd.json().amountUsd).toBe("20");
+    expect(upd.json().amountUsd).toBe(20);
+    const cachedUpd = JSON.parse((await redis.get("budget:t1:monthly"))!);
+    expect(cachedUpd.amount).toBe(20);
 
     await app.inject({
       method: "DELETE",
       url: `/admin/budget/${budget.id}`,
       headers: { "x-admin-key": "adminkey" },
     });
+    expect(await redis.get("budget:t1:monthly")).toBeNull();
     const list = await app.inject({
       method: "GET",
       url: "/admin/tenant/1/budgets",

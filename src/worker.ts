@@ -1,4 +1,4 @@
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import dotenv from "dotenv";
 // @ts-expect-error: Importing .ts extension directly for compatibility
@@ -46,7 +46,7 @@ async function main() {
           tenant: data.tenant,
           tenantId: tenantRecord.id,
           route: data.route,
-          usd: new Prisma.Decimal(data.usd),
+          usd: data.usd,
           promptTok: Number(data.promptTok),
           compTok: Number(data.compTok),
         },
