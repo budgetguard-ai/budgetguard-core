@@ -47,6 +47,7 @@ Install dependencies and run the Prisma migrations:
 ```bash
 npm install
 npx prisma migrate dev
+npm run seed
 ```
 
 Run the server in watch mode and start the worker in another terminal:
