@@ -1,4 +1,13 @@
 import { buildServer } from "./server.js";
+import { execSync } from "node:child_process";
+
+try {
+  // Run migrations automatically on startup
+  execSync("npx prisma migrate deploy", { stdio: "inherit" });
+} catch (err) {
+  console.error("Migration failed:", err);
+  process.exit(1);
+}
 
 const start = async () => {
   const app = await buildServer();
