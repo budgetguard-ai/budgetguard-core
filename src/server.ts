@@ -238,8 +238,16 @@ export async function buildServer() {
       },
     },
     async (req, reply) => {
+      const startDecision = process.hrtime.bigint();
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
+      const budgets = [] as Array<{
+        period: string;
+        usage: number;
+        budget: number;
+        start: string;
+        end: string;
+      }>;
       for (const period of BUDGET_PERIODS) {
         const { amount, startDate, endDate } = await readBudget({
           tenant,
@@ -256,35 +264,46 @@ export async function buildServer() {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
           if (cur) usage = parseFloat(cur);
         }
-        const allow = await evaluatePolicy({
+        budgets.push({
+          period,
           usage,
           budget: amount,
-          route: req.routeOptions.url ?? req.url,
-          time: new Date().getHours(),
-          tenant,
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
         });
-        app.log.info(
-          {
-            input: {
-              usage,
-              budget: amount,
-              route: req.routeOptions.url ?? req.url,
-              tenant,
-            },
-            allow,
-          },
-          "policy decision",
-        );
-        if (!allow) {
-          return reply.code(403).send({
-            error: "Request denied by policy",
-            details: { usage, budget: amount },
-          });
+      }
+      const input = {
+        tenant,
+        route: req.routeOptions.url ?? req.url,
+        time: new Date().getHours(),
+        budgets,
+      };
+      const allow = await evaluatePolicy(input);
+      app.log.info({ input, allow }, "policy decision");
+      if (!allow) {
+        const decisionMs =
+          Number(process.hrtime.bigint() - startDecision) / 1e6;
+        for (const b of budgets) {
+          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
         }
-        if (usage >= amount) {
+        app.log.warn({ decisionMs }, "policy denied");
+        return reply.code(403).send({ error: "Request denied by policy" });
+      }
+      for (const b of budgets) {
+        if (b.usage >= b.budget) {
+          const decisionMs =
+            Number(process.hrtime.bigint() - startDecision) / 1e6;
+          app.log.warn({
+            period: b.period,
+            usage: b.usage,
+            budget: b.budget,
+            decisionMs,
+          });
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
+      app.log.info({ decisionMs }, "allow request");
       const apiKey =
         (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
       if (!apiKey) {
@@ -331,8 +350,16 @@ export async function buildServer() {
       },
     },
     async (req, reply) => {
+      const startDecision = process.hrtime.bigint();
       const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
+      const budgets = [] as Array<{
+        period: string;
+        usage: number;
+        budget: number;
+        start: string;
+        end: string;
+      }>;
       for (const period of BUDGET_PERIODS) {
         const { amount, startDate, endDate } = await readBudget({
           tenant,
@@ -349,35 +376,46 @@ export async function buildServer() {
           const cur = await redisClient.get(`ledger:${tenant}:${key}`);
           if (cur) usage = parseFloat(cur);
         }
-        const allow = await evaluatePolicy({
+        budgets.push({
+          period,
           usage,
           budget: amount,
-          route: req.routeOptions.url ?? req.url,
-          time: new Date().getHours(),
-          tenant,
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
         });
-        app.log.info(
-          {
-            input: {
-              usage,
-              budget: amount,
-              route: req.routeOptions.url ?? req.url,
-              tenant,
-            },
-            allow,
-          },
-          "policy decision",
-        );
-        if (!allow) {
-          return reply.code(403).send({
-            error: "Request denied by policy",
-            details: { usage, budget: amount },
-          });
+      }
+      const input = {
+        tenant,
+        route: req.routeOptions.url ?? req.url,
+        time: new Date().getHours(),
+        budgets,
+      };
+      const allow = await evaluatePolicy(input);
+      app.log.info({ input, allow }, "policy decision");
+      if (!allow) {
+        const decisionMs =
+          Number(process.hrtime.bigint() - startDecision) / 1e6;
+        for (const b of budgets) {
+          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
         }
-        if (usage >= amount) {
+        app.log.warn({ decisionMs }, "policy denied");
+        return reply.code(403).send({ error: "Request denied by policy" });
+      }
+      for (const b of budgets) {
+        if (b.usage >= b.budget) {
+          const decisionMs =
+            Number(process.hrtime.bigint() - startDecision) / 1e6;
+          app.log.warn({
+            period: b.period,
+            usage: b.usage,
+            budget: b.budget,
+            decisionMs,
+          });
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
+      app.log.info({ decisionMs }, "allow request");
       const apiKey =
         (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
       if (!apiKey) {

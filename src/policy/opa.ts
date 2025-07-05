@@ -21,6 +21,9 @@ export async function evaluatePolicy(
     await load();
   }
   if (!policy) return false;
+  if (!Array.isArray((input as Record<string, unknown>).budgets)) {
+    throw new Error("input.budgets must be an array");
+  }
   const res = await policy.evaluate(input);
   if (!Array.isArray(res) || res.length === 0) return false;
   const result = res[0].result;

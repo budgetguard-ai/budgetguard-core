@@ -238,21 +238,37 @@ package budgetguard.policy
 default allow = false
 
 allow {
-  input.usage < input.budget
+  all_periods_under_budget
+  not deny_admin_after_hours
+}
+
+all_periods_under_budget {
+  every b in input.budgets {
+    b.usage < b.budget
+  }
 }
 
 deny_admin_after_hours {
   input.route == "/admin/tenant-usage"
   input.time > 20
 }
+```
 
-allow {
-  not deny_admin_after_hours
+The policy now receives a single input object:
+
+```json
+{
+  "tenant": "t1",
+  "route": "/v1/completions",
+  "time": 12,
+  "budgets": [
+    { "period": "daily", "usage": 1, "budget": 10, "start": "...", "end": "..." }
+  ]
 }
 ```
 
-The policy receives an input object with `usage`, `budget`, `route`, `time`, and
-`tenant` fields. If evaluation returns `true`, the request is allowed. Otherwise
+All budget periods must be under their limits for the request to be allowed.
+If any period exceeds its budget or the admin route is accessed after hours,
 the server responds with `403` and an error message.
 
 ## Schema & Data Model

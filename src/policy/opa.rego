@@ -1,14 +1,18 @@
 package budgetguard.policy
 
-default allow := false
+default allow = false
 
-# Allow only when under budget and not accessing admin routes after hours
 allow if {
-  input.usage < input.budget
+  all_periods_under_budget
   not deny_admin_after_hours
 }
 
-# Block access to admin routes after hours
+all_periods_under_budget if {
+  every b in input.budgets {
+    b.usage < b.budget
+  }
+}
+
 deny_admin_after_hours if {
   input.route == "/admin/tenant-usage"
   input.time > 20
