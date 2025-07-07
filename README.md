@@ -158,7 +158,7 @@ curl -X POST \
 
 ### `GET /admin/tenant/:tenantId/apikeys`
 
-List keys for a tenant (key value only shown on creation).
+List keys for a tenant. The response includes id, createdAt, isActive, and lastUsedAt fields, but not the key value.
 
 ```bash
 curl -H "X-Admin-Key: <ADMIN_API_KEY>" \
