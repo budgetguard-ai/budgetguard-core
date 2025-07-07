@@ -142,6 +142,43 @@ Update a budget.
 
 Delete a budget.
 
+## API Key Management
+
+Create, list and revoke API keys scoped to a tenant.
+
+### `POST /admin/tenant/:tenantId/apikeys`
+
+Generate a new key for a tenant.
+
+```bash
+curl -X POST \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  http://localhost:3000/admin/tenant/1/apikeys
+```
+
+### `GET /admin/tenant/:tenantId/apikeys`
+
+List keys for a tenant (key value only shown on creation).
+
+```bash
+curl -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  http://localhost:3000/admin/tenant/1/apikeys
+```
+
+### `DELETE /admin/apikey/:id`
+
+Deactivate a key.
+
+```bash
+curl -X DELETE \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  http://localhost:3000/admin/apikey/2
+```
+
+Use API keys in requests by sending `Authorization: Bearer <API_KEY>` or
+`X-API-Key: <API_KEY>`. The associated tenant is resolved automatically and the
+`X-Tenant-Id` header is ignored when a key is provided.
+
 ## Cost Calculation
 
 BudgetGuard counts tokens using `tiktoken` and multiplies by the per-model

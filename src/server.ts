@@ -9,6 +9,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import { createClient } from "redis";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import { randomBytes } from "crypto";
 import { countTokensAndCost } from "./token.js";
 import {
   ledgerKey,
@@ -239,8 +240,44 @@ export async function buildServer() {
     },
     async (req, reply) => {
       const startDecision = process.hrtime.bigint();
-      const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
+      let tenant = (req.headers["x-tenant-id"] as string) || "public";
+      let supplied = undefined as string | undefined;
+      const auth = req.headers.authorization as string | undefined;
+      if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
+      if (!supplied && req.headers["x-api-key"]) {
+        supplied = req.headers["x-api-key"] as string;
+      }
+      if (supplied) {
+        const keyRec = await prisma.apiKey.findFirst({
+          where: { key: supplied, isActive: true },
+        });
+        if (!keyRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        const tenantRec = await prisma.tenant.findUnique({
+          where: { id: keyRec.tenantId },
+        });
+        if (!tenantRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        tenant = tenantRec.name;
+        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
+        await prisma.apiKey.update({
+          where: { id: keyRec.id },
+          data: { lastUsedAt: new Date() },
+        });
+        await prisma.auditLog
+          .create({
+            data: {
+              tenantId: keyRec.tenantId,
+              actor: `apiKey:${keyRec.id}`,
+              event: "api_key_used",
+              details: req.routeOptions.url ?? req.url,
+            },
+          })
+          .catch(() => {});
+      }
       const budgets = [] as Array<{
         period: string;
         usage: number;
@@ -351,8 +388,44 @@ export async function buildServer() {
     },
     async (req, reply) => {
       const startDecision = process.hrtime.bigint();
-      const tenant = (req.headers["x-tenant-id"] as string) || "public";
       const prisma = await getPrisma();
+      let tenant = (req.headers["x-tenant-id"] as string) || "public";
+      let supplied: string | undefined;
+      const auth = req.headers.authorization as string | undefined;
+      if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
+      if (!supplied && req.headers["x-api-key"]) {
+        supplied = req.headers["x-api-key"] as string;
+      }
+      if (supplied) {
+        const keyRec = await prisma.apiKey.findFirst({
+          where: { key: supplied, isActive: true },
+        });
+        if (!keyRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        const tenantRec = await prisma.tenant.findUnique({
+          where: { id: keyRec.tenantId },
+        });
+        if (!tenantRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        tenant = tenantRec.name;
+        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
+        await prisma.apiKey.update({
+          where: { id: keyRec.id },
+          data: { lastUsedAt: new Date() },
+        });
+        await prisma.auditLog
+          .create({
+            data: {
+              tenantId: keyRec.tenantId,
+              actor: `apiKey:${keyRec.id}`,
+              event: "api_key_used",
+              details: req.routeOptions.url ?? req.url,
+            },
+          })
+          .catch(() => {});
+      }
       const budgets = [] as Array<{
         period: string;
         usage: number;
@@ -759,6 +832,146 @@ export async function buildServer() {
       const id = Number(tenantId);
       const budgets = await prisma.budget.findMany({ where: { tenantId: id } });
       return reply.send(budgets);
+    },
+  );
+
+  app.post(
+    "/admin/tenant/:tenantId/apikeys",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              id: { type: "number" },
+              key: { type: "string" },
+              createdAt: { type: "string" },
+              isActive: { type: "boolean" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+      const key = randomBytes(32).toString("hex");
+      const rec = await prisma.apiKey.create({
+        data: { key, tenantId: id, isActive: true },
+      });
+      return reply.send({
+        id: rec.id,
+        key: rec.key,
+        createdAt: rec.createdAt,
+        isActive: rec.isActive,
+      });
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/apikeys",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "number" },
+                createdAt: { type: "string" },
+                isActive: { type: "boolean" },
+                lastUsedAt: { type: "string", nullable: true },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const list = await prisma.apiKey.findMany({ where: { tenantId: id } });
+      return reply.send(
+        list.map((k) => ({
+          id: k.id,
+          createdAt: k.createdAt,
+          isActive: k.isActive,
+          lastUsedAt: k.lastUsedAt ?? undefined,
+        })),
+      );
+    },
+  );
+
+  app.delete(
+    "/admin/apikey/:id",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+        response: {
+          200: { type: "object", properties: { ok: { type: "boolean" } } },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { id } = req.params as { id: string };
+      await prisma.apiKey.update({
+        where: { id: Number(id) },
+        data: { isActive: false },
+      });
+      return reply.send({ ok: true });
     },
   );
 

@@ -39,6 +39,14 @@ vi.mock("@prisma/client", () => {
     id: number;
     name: string;
   }
+  interface ApiKey {
+    id: number;
+    key: string;
+    tenantId: number;
+    isActive: boolean;
+    createdAt?: Date;
+    lastUsedAt?: Date;
+  }
   interface Budget {
     id: number;
     tenantId: number;
@@ -99,7 +107,15 @@ vi.mock("@prisma/client", () => {
   }
   class FakePrisma {
     tenant = new Collection<Tenant>();
+    apiKey = new Collection<ApiKey>();
     budget = new Collection<Budget>();
+    auditLog = new Collection<{
+      id: number;
+      tenantId: number;
+      actor: string;
+      event: string;
+      details: string;
+    }>();
     async $connect() {}
     async $disconnect() {}
   }
@@ -127,6 +143,10 @@ beforeAll(async () => {
   process.env.ADMIN_API_KEY = "adminkey";
   process.env.BUDGET_PERIODS = "daily";
   process.env.REDIS_URL = "redis://test";
+  vi.stubGlobal("fetch", async () => ({
+    status: 200,
+    json: async () => ({ choices: [{ text: "ok" }], model: "gpt-3.5-turbo" }),
+  }));
   redis = createClient();
   const mod = await import("../server");
   buildServer = mod.buildServer;
@@ -135,6 +155,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  vi.unstubAllGlobals();
 });
 
 describe("admin endpoints", () => {
@@ -211,5 +232,66 @@ describe("admin endpoints", () => {
       headers: { "x-admin-key": "adminkey" },
     });
     expect(res.json()).toEqual({ daily: 5 });
+  });
+
+  it("manages api keys", async () => {
+    let res = await app.inject({
+      method: "POST",
+      url: "/admin/tenant/1/apikeys",
+      headers: { "x-admin-key": "adminkey" },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    const created = res.json();
+    expect(created.key.length).toBe(64);
+
+    res = await app.inject({
+      method: "GET",
+      url: "/admin/tenant/1/apikeys",
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(res.json().length).toBe(1);
+
+    res = await app.inject({
+      method: "DELETE",
+      url: `/admin/apikey/${created.id}`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(res.json()).toEqual({ ok: true });
+    res = await app.inject({
+      method: "GET",
+      url: "/admin/tenant/1/apikeys",
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(res.json()[0].isActive).toBe(false);
+  });
+
+  it("authenticates requests with api keys", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: "/admin/tenant/1/apikeys",
+      headers: { "x-admin-key": "adminkey" },
+      payload: {},
+    });
+    const { key, id } = create.json();
+    let res = await app.inject({
+      method: "POST",
+      url: "/v1/completions",
+      headers: { Authorization: `Bearer ${key}` },
+      payload: { model: "gpt-3.5-turbo", prompt: "hi" },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.inject({
+      method: "DELETE",
+      url: `/admin/apikey/${id}`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    res = await app.inject({
+      method: "POST",
+      url: "/v1/completions",
+      headers: { Authorization: `Bearer ${key}` },
+      payload: { model: "gpt-3.5-turbo", prompt: "hi" },
+    });
+    expect(res.statusCode).toBe(401);
   });
 });
