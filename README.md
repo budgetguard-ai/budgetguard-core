@@ -229,7 +229,9 @@ bash scripts/build-opa-wasm.sh
 
 This compiles the policy to `src/policy/opa_policy.wasm` which the server loads
 on startup. Run the script once before starting the server or running tests so
-the WASM file is present. Set `OPA_POLICY_PATH` to override the location.
+the WASM file is present. Set `OPA_POLICY_PATH` to override the location. The
+server watches this file for changes and automatically reloads the policy so
+updates take effect without restarting.
 
 ### Example Rego Policy
 
