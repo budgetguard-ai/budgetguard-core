@@ -143,6 +143,7 @@ beforeAll(async () => {
   process.env.ADMIN_API_KEY = "adminkey";
   process.env.BUDGET_PERIODS = "daily";
   process.env.REDIS_URL = "redis://test";
+  process.env.OPENAI_KEY = "test-key";
   vi.stubGlobal("fetch", async () => ({
     status: 200,
     json: async () => ({ choices: [{ text: "ok" }], model: "gpt-3.5-turbo" }),
