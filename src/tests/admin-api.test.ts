@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 // integration tests for admin API
 import type { FastifyInstance } from "fastify";
 import { ledgerKey } from "../ledger.js";
@@ -152,6 +160,15 @@ beforeAll(async () => {
   const mod = await import("../server");
   buildServer = mod.buildServer;
   app = await buildServer();
+});
+
+beforeEach(() => {
+  const r = redis as unknown as {
+    data: Record<string, string>;
+    stream: Array<Record<string, string>>;
+  };
+  r.data = {};
+  r.stream = [];
 });
 
 afterAll(async () => {
