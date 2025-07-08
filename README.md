@@ -145,7 +145,7 @@ Migrations (Prisma):
 
 ```bash
 # local dev
-a npx prisma migrate dev
+npx prisma migrate dev
 
 # production
 npm run migrate
