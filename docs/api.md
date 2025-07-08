@@ -1,9 +1,12 @@
 # API Documentation
 
-BudgetGuard exposes its REST API using an OpenAPI specification generated at runtime.
-Open the Swagger UI at [`/docs`](../docs) when the server is running to interact with
-endpoints and inspect schemas.
+Start the service and open [http://localhost:3000/docs](http://localhost:3000/docs) to view the Swagger UI. The OpenAPI JSON is available at `/docs/json`.
 
-The raw OpenAPI JSON is available at [`/docs/json`](../docs/json) and can be
-downloaded for use with other tools.
+Example request:
 
+```bash
+curl -X POST -H "Content-Type: application/json" \
+     -H "X-Tenant-Id: demo" \
+     -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
+     http://localhost:3000/v1/completions
+```
