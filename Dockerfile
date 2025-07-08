@@ -8,6 +8,8 @@ RUN npm ci
 
 COPY . .
 
+RUN npx prisma generate
+
 RUN bash scripts/ensure-opa-wasm.sh
 
 RUN npm run build
