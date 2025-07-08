@@ -270,6 +270,13 @@ describe("admin endpoints", () => {
     });
     expect(res.json().length).toBe(1);
 
+    const apiKeys = await app.inject({
+      method: "GET",
+      url: "/admin/tenant/1/apikeys",
+      headers: { "x-admin-key": "adminkey" },
+    });
+    console.log("API keys for tenant 1:", apiKeys.json());
+
     res = await app.inject({
       method: "DELETE",
       url: `/admin/apikey/${created.id}`,
@@ -292,24 +299,42 @@ describe("admin endpoints", () => {
       payload: {},
     });
     const { key, id } = create.json();
+
+    // Set a budget for the tenant so completions are allowed
+    await app.inject({
+      method: "POST",
+      url: "/admin/tenant/1/budgets",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { budgets: [{ period: "daily", amountUsd: 10 }] },
+    });
+
+    console.log("Redis data before completion:", redis.data);
+    console.log("All Redis keys:", Object.keys(redis.data));
+
     let res = await app.inject({
       method: "POST",
       url: "/v1/completions",
       headers: { Authorization: `Bearer ${key}` },
       payload: { model: "gpt-3.5-turbo", prompt: "hi" },
     });
+    console.log("Completion response status:", res.statusCode);
+    console.log("Completion response body:", res.body);
+
     expect(res.statusCode).toBe(200);
+
     await app.inject({
       method: "DELETE",
       url: `/admin/apikey/${id}`,
       headers: { "x-admin-key": "adminkey" },
     });
+
     res = await app.inject({
       method: "POST",
       url: "/v1/completions",
       headers: { Authorization: `Bearer ${key}` },
       payload: { model: "gpt-3.5-turbo", prompt: "hi" },
     });
+
     expect(res.statusCode).toBe(401);
   });
 });
