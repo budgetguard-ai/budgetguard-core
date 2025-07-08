@@ -3,10 +3,6 @@
 **Stop surprise AI bills. Ship with confidence.**
 BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway that enforces hard budgets, rate limits, and custom policy checks before any request reaches OpenAI.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/your-org/budgetguard-core/main/.github/preview.png" width="640" alt="BudgetGuard diagram">
-</p>
-
 ---
 
 ## Why BudgetGuard?
