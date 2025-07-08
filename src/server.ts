@@ -19,6 +19,7 @@ import {
 } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
+import { readRateLimit, writeRateLimit } from "./rate-limit.js";
 
 dotenv.config();
 
@@ -192,7 +193,17 @@ export async function buildServer() {
     ) => void,
     {
       client: redisClient,
-      max: Number(process.env.MAX_REQS_PER_MIN || 100),
+      max: async (req: FastifyRequest) => {
+        const tenant = (req.headers["x-tenant-id"] as string) || "public";
+        const prismaClient = await getPrisma();
+        const limit = await readRateLimit({
+          tenant,
+          prisma: prismaClient,
+          redis: redisClient,
+          defaultLimit: Number(process.env.MAX_REQS_PER_MIN || 100),
+        });
+        return limit === 0 ? Number.MAX_SAFE_INTEGER : limit;
+      },
       timeWindow: "1 minute",
       keyGenerator: (req: FastifyRequest) =>
         (req.headers["x-tenant-id"] as string) || "public",
@@ -594,7 +605,12 @@ export async function buildServer() {
         return reply.code(400).send({ error: "Missing name" });
       }
       try {
-        const tenant = await prisma.tenant.create({ data: { name } });
+        const tenant = await prisma.tenant.create({
+          data: {
+            name,
+            rateLimitPerMin: Number(process.env.MAX_REQS_PER_MIN || 100),
+          },
+        });
         return reply.send(tenant);
       } catch {
         return reply.code(400).send({ error: "Unable to create tenant" });
@@ -678,6 +694,101 @@ export async function buildServer() {
         return reply.code(404).send({ error: "Tenant not found" });
       }
       return reply.send(tenant);
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/ratelimit",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: { rateLimitPerMin: { type: "number", nullable: true } },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+      return reply.send({ rateLimitPerMin: tenant.rateLimitPerMin ?? null });
+    },
+  );
+
+  app.put(
+    "/admin/tenant/:tenantId/ratelimit",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            rateLimitPerMin: { oneOf: [{ type: "number" }, { type: "null" }] },
+          },
+          required: ["rateLimitPerMin"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: { rateLimitPerMin: { type: "number", nullable: true } },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const { rateLimitPerMin } = req.body as {
+        rateLimitPerMin: number | null;
+      };
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+      const updated = await prisma.tenant.update({
+        where: { id },
+        data: { rateLimitPerMin: rateLimitPerMin },
+      });
+      await writeRateLimit(
+        tenant.name,
+        updated.rateLimitPerMin ?? Number(process.env.MAX_REQS_PER_MIN || 100),
+        redisClient,
+      );
+      return reply.send({ rateLimitPerMin: updated.rateLimitPerMin ?? null });
     },
   );
 

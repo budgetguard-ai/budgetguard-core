@@ -47,7 +47,7 @@ BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway
    | -------------------- | ------------------------------------------------------ |
    | `OPENAI_KEY`         | Your OpenAI API key                                    |
    | `ADMIN_API_KEY`      | Key for admin routes                                   |
-   | `MAX_REQS_PER_MIN`   | Per‑tenant rate limit (default **100**)                |
+   | `MAX_REQS_PER_MIN`   | Default per‑tenant rate limit (use `0` for unlimited)                |
    | `DEFAULT_BUDGET_USD` | Default tenant monthly budget                          |
    | `BUDGET_PERIODS`     | Comma‑separated budget windows (e.g. `monthly,weekly`) |
 
@@ -117,6 +117,10 @@ Required headers: `X-Tenant-Id`, `X-API-Key` (or rely on server‑side `OPENAI_K
 | `GET`  | `/admin/tenant/:id`         | Tenant info      |
 | `POST` | `/admin/tenant/:id/budgets` | Set budgets      |
 | `POST` | `/admin/tenant/:id/apikeys` | Generate API key |
+| `PUT`  | `/admin/tenant/:id/ratelimit` | Set per-minute rate limit (0=unlimited) |
+| `GET`  | `/admin/tenant/:id/ratelimit` | Get per-minute rate limit |
+
+`rateLimitPerMin` set to `0` disables limiting for that tenant.
 
 Full OpenAPI spec available at **/docs** once the service is running.
 

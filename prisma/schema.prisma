@@ -27,6 +27,7 @@ model Tenant {
   name      String    @unique
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  rateLimitPerMin Int?
   apiKeys   ApiKey[]
   budgets   Budget[]
   policies  PolicyBundle[]

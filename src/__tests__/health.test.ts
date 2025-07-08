@@ -1,10 +1,35 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { buildServer } from "../server";
 import type { FastifyInstance } from "fastify";
+
+vi.mock("redis", () => {
+  class FakeRedis {
+    data: Record<string, string> = {};
+    async connect() {}
+    async quit() {}
+    async get(key: string) {
+      return this.data[key] ?? null;
+    }
+    async set(key: string, val: string) {
+      this.data[key] = val;
+    }
+  }
+  return { createClient: () => new FakeRedis() };
+});
+
+vi.mock("@prisma/client", () => {
+  class FakePrisma {
+    async $connect() {}
+    async $disconnect() {}
+    tenant = { findFirst: async () => null };
+  }
+  return { PrismaClient: FakePrisma };
+});
 
 let app: FastifyInstance;
 
 beforeAll(async () => {
+  delete process.env.REDIS_URL;
   app = await buildServer();
 });
 
