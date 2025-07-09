@@ -8,5 +8,24 @@ Example request:
 curl -X POST -H "Content-Type: application/json" \
      -H "X-Tenant-Id: demo" \
      -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
-     http://localhost:3000/v1/completions
+    http://localhost:3000/v1/completions
+```
+
+### Manage rate limits
+
+Set a tenant's per-minute limit (use `null` for unlimited):
+
+```bash
+curl -X PUT \
+     -H "X-Admin-Key: <ADMIN_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"rateLimitPerMin":null}' \
+     http://localhost:3000/admin/tenant/1/ratelimit
+```
+
+Retrieve the current setting:
+
+```bash
+curl -H "X-Admin-Key: <ADMIN_KEY>" \
+     http://localhost:3000/admin/tenant/1/ratelimit
 ```

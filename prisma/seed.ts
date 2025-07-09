@@ -14,6 +14,13 @@ async function main() {
     create: { name: tenantName },
   });
 
+  if (process.env.MAX_REQS_PER_MIN) {
+    await prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { rateLimitPerMin: Number(process.env.MAX_REQS_PER_MIN) },
+    });
+  }
+
   const apiKey = process.env.DEFAULT_API_KEY || randomBytes(16).toString("hex");
   await prisma.apiKey.upsert({
     where: { key: apiKey },
