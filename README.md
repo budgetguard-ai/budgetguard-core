@@ -68,13 +68,26 @@ BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway
    * Browse Swagger UI → [http://localhost:3000/docs](http://localhost:3000/docs)
   * Curl a response:
 
+### Example Requests
+
+Test the gateway with these sample `curl` commands:
+
 ```bash
 curl -X POST http://localhost:3000/v1/responses \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <OPENAI_KEY>" \
-  -H "X-Tenant-Id: demo" \
-  -H "X-API-Key: <TENANT_API_KEY>" \
-  -d '{"model":"gpt-3.5-turbo","input":"hello"}'
+   -H "Content-Type: application/json" \
+   -H "Authorization: Bearer <OPENAI_KEY>" \
+   -H "X-Tenant-Id: demo" \
+   -H "X-API-Key: <TENANT_API_KEY>" \
+   -d '{"model":"gpt-3.5-turbo","input":"hello"}'
+```
+
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+   -H "Content-Type: application/json" \
+   -H "Authorization: Bearer <OPENAI_KEY>" \
+   -H "X-Tenant-Id: demo" \
+   -H "X-API-Key: <TENANT_API_KEY>" \
+   -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 That’s it—you now have full budget & rate‑limit protection in front of OpenAI.
