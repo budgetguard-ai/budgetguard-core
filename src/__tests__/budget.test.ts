@@ -171,8 +171,8 @@ describe("budget enforcement", () => {
   it("allows under budget", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
-      payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
+      url: "/v1/responses",
+      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -182,8 +182,8 @@ describe("budget enforcement", () => {
     await redis.set(`ledger:public:${key}`, "0.00001");
     const res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
-      payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
+      url: "/v1/responses",
+      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: "Request denied by policy" });
@@ -203,8 +203,8 @@ describe("budget enforcement", () => {
     );
     const res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
-      payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
+      url: "/v1/responses",
+      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -226,9 +226,9 @@ describe("budget enforcement", () => {
     await redis.del("budget:t1:daily");
     const res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
+      url: "/v1/responses",
       headers: { "x-tenant-id": "t1" },
-      payload: { model: "gpt-3.5-turbo", prompt: "hi", max_tokens: 1 },
+      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
     const cached = JSON.parse((await redis.get("budget:t1:daily"))!);

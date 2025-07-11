@@ -98,7 +98,7 @@ export async function buildServer() {
     if (!redisClient) return payload;
 
     const route = req.routeOptions.url ?? req.url;
-    if (route !== "/v1/completions" && route !== "/v1/chat/completions") {
+    if (route !== "/v1/chat/completions" && route !== "/v1/responses") {
       return payload;
     }
 
@@ -138,7 +138,7 @@ export async function buildServer() {
         }
       }
 
-      if (model && (body?.prompt || body?.messages)) {
+      if (model && (body?.prompt || body?.messages || body?.input)) {
         const {
           promptTokens,
           completionTokens,
@@ -148,7 +148,8 @@ export async function buildServer() {
           prompt:
             (body?.prompt as string) ||
             ((body?.messages as Array<{ role: string; content: string }>) ??
-              []),
+              []) ||
+            (body?.input as string),
           completion,
         });
         usd = cost;
@@ -234,167 +235,6 @@ export async function buildServer() {
       },
     },
     async () => ({ ok: true }),
-  );
-
-  // proxy OpenAI completions endpoint
-  app.post(
-    "/v1/completions",
-    {
-      schema: {
-        body: {
-          type: "object",
-          properties: {
-            model: { type: "string" },
-            prompt: {},
-          },
-          required: ["model"],
-        },
-        response: { 200: { type: "object", additionalProperties: true } },
-        parameters: [
-          {
-            in: "header",
-            name: "X-Tenant-Id",
-            schema: { type: "string" },
-            required: false,
-            description: "Tenant identifier for budget/rate limiting",
-          },
-          {
-            in: "header",
-            name: "Authorization",
-            schema: { type: "string" },
-            required: false,
-            description: "Bearer <API_KEY>",
-          },
-          {
-            in: "header",
-            name: "X-API-Key",
-            schema: { type: "string" },
-            required: false,
-            description: "Tenant API key",
-          },
-        ],
-        security: [{}, { ApiKeyAuth: [] }, { BearerAuth: [] }],
-      },
-    },
-    async (req, reply) => {
-      const startDecision = process.hrtime.bigint();
-      const prisma = await getPrisma();
-      let tenant = (req.headers["x-tenant-id"] as string) || "public";
-      let supplied = undefined as string | undefined;
-      const auth = req.headers.authorization as string | undefined;
-      if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
-      if (!supplied && req.headers["x-api-key"]) {
-        supplied = req.headers["x-api-key"] as string;
-      }
-      if (supplied) {
-        const keyRec = await prisma.apiKey.findFirst({
-          where: { key: supplied, isActive: true },
-        });
-        if (!keyRec) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        const tenantRec = await prisma.tenant.findUnique({
-          where: { id: keyRec.tenantId },
-        });
-        if (!tenantRec) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        tenant = tenantRec.name;
-        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
-        await prisma.apiKey.update({
-          where: { id: keyRec.id },
-          data: { lastUsedAt: new Date() },
-        });
-        await prisma.auditLog
-          .create({
-            data: {
-              tenantId: keyRec.tenantId,
-              actor: `apiKey:${keyRec.id}`,
-              event: "api_key_used",
-              details: req.routeOptions.url ?? req.url,
-            },
-          })
-          .catch(() => {});
-      }
-      const budgets = [] as Array<{
-        period: string;
-        usage: number;
-        budget: number;
-        start: string;
-        end: string;
-      }>;
-      for (const period of BUDGET_PERIODS) {
-        const { amount, startDate, endDate } = await readBudget({
-          tenant,
-          period,
-          prisma,
-          redis: redisClient,
-          defaultBudget: DEFAULT_BUDGET,
-        });
-        const now = new Date();
-        if (now < startDate || now > endDate) continue;
-        const key = ledgerKey(period, now, { startDate, endDate });
-        let usage = 0;
-        if (redisClient) {
-          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-          if (cur) usage = parseFloat(cur);
-        }
-        budgets.push({
-          period,
-          usage,
-          budget: amount,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        });
-      }
-      const input = {
-        tenant,
-        route: req.routeOptions.url ?? req.url,
-        time: new Date().getHours(),
-        budgets,
-      };
-      const allow = await evaluatePolicy(input);
-      app.log.info({ input, allow }, "policy decision");
-      if (!allow) {
-        const decisionMs =
-          Number(process.hrtime.bigint() - startDecision) / 1e6;
-        for (const b of budgets) {
-          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
-        }
-        app.log.warn({ decisionMs }, "policy denied");
-        return reply.code(403).send({ error: "Request denied by policy" });
-      }
-      for (const b of budgets) {
-        if (b.usage >= b.budget) {
-          const decisionMs =
-            Number(process.hrtime.bigint() - startDecision) / 1e6;
-          app.log.warn({
-            period: b.period,
-            usage: b.usage,
-            budget: b.budget,
-            decisionMs,
-          });
-          return reply.code(402).send({ error: "Budget exceeded" });
-        }
-      }
-      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
-      app.log.info({ decisionMs }, "allow request");
-      const apiKey =
-        (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
-      if (!apiKey) {
-        return reply.code(400).send({ error: "Missing OpenAI key" });
-      }
-      const resp = await fetch("https://api.openai.com/v1/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(req.body),
-      });
-      const json = await resp.json();
-      return reply.code(resp.status).send(json);
-    },
   );
 
   // proxy OpenAI chat completions endpoint
