@@ -68,13 +68,24 @@ BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway
    * Browse Swagger UI → [http://localhost:3000/docs](http://localhost:3000/docs)
    * Curl a completion:
 
-     ```bash
-     curl -X POST http://localhost:3000/v1/completions \
-       -H "Content-Type: application/json" \
-       -H "X-Tenant-Id: demo" \
-       -H "X-API-Key: <TENANT_API_KEY>" \
-       -d '{"model":"gpt-3.5-turbo","prompt":"hello"}'
-     ```
+```bash
+ curl -X POST http://localhost:3000/v1/completions \
+   -H "Content-Type: application/json" \
+   -H "X-Tenant-Id: demo" \
+   -H "X-API-Key: <TENANT_API_KEY>" \
+   -d '{"model":"gpt-3.5-turbo","prompt":"hello"}'
+```
+
+Example for the new `/v1/responses` endpoint:
+
+```bash
+curl -X POST http://localhost:3000/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <OPENAI_KEY>" \
+  -H "X-Tenant-Id: demo" \
+  -H "X-API-Key: <TENANT_API_KEY>" \
+  -d '{"model":"gpt-3.5-turbo"}'
+```
 
 That’s it—you now have full budget & rate‑limit protection in front of OpenAI.
 
@@ -105,6 +116,7 @@ That’s it—you now have full budget & rate‑limit protection in front of Ope
 | ------ | ---------------------- | ---------------------------------- |
 | `POST` | `/v1/completions`      | Forward to OpenAI completions      |
 | `POST` | `/v1/chat/completions` | Forward to OpenAI chat completions |
+| `POST` | `/v1/responses`        | Forward to OpenAI responses        |
 | `GET`  | `/health`              | Liveness probe                     |
 
 Required headers: `X-Tenant-Id`, `X-API-Key` (or rely on server‑side `OPENAI_KEY`). Usage is logged in `UsageLedger`.

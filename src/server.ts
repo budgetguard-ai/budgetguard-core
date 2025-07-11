@@ -560,6 +560,169 @@ export async function buildServer() {
     },
   );
 
+  // proxy OpenAI responses endpoint
+  app.post(
+    "/v1/responses",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            model: { type: "string" },
+          },
+          required: ["model"],
+          additionalProperties: true,
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Tenant-Id",
+            schema: { type: "string" },
+            required: false,
+            description: "Tenant identifier for budget/rate limiting",
+          },
+          {
+            in: "header",
+            name: "Authorization",
+            schema: { type: "string" },
+            required: false,
+            description: "Bearer <OPENAI_KEY>",
+          },
+          {
+            in: "header",
+            name: "X-API-Key",
+            schema: { type: "string" },
+            required: false,
+            description: "Tenant API key",
+          },
+        ],
+        security: [{}, { ApiKeyAuth: [] }],
+      },
+    },
+    async (req, reply) => {
+      const startDecision = process.hrtime.bigint();
+      const prisma = await getPrisma();
+      let tenant = (req.headers["x-tenant-id"] as string) || "public";
+      let supplied: string | undefined;
+      if (req.headers["x-api-key"]) {
+        supplied = req.headers["x-api-key"] as string;
+      }
+      if (supplied) {
+        const keyRec = await prisma.apiKey.findFirst({
+          where: { key: supplied, isActive: true },
+        });
+        if (!keyRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        const tenantRec = await prisma.tenant.findUnique({
+          where: { id: keyRec.tenantId },
+        });
+        if (!tenantRec) {
+          return reply.code(401).send({ error: "Unauthorized" });
+        }
+        tenant = tenantRec.name;
+        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
+        await prisma.apiKey.update({
+          where: { id: keyRec.id },
+          data: { lastUsedAt: new Date() },
+        });
+        await prisma.auditLog
+          .create({
+            data: {
+              tenantId: keyRec.tenantId,
+              actor: `apiKey:${keyRec.id}`,
+              event: "api_key_used",
+              details: req.routeOptions.url ?? req.url,
+            },
+          })
+          .catch(() => {});
+      }
+      const budgets = [] as Array<{
+        period: string;
+        usage: number;
+        budget: number;
+        start: string;
+        end: string;
+      }>;
+      for (const period of BUDGET_PERIODS) {
+        const { amount, startDate, endDate } = await readBudget({
+          tenant,
+          period,
+          prisma,
+          redis: redisClient,
+          defaultBudget: DEFAULT_BUDGET,
+        });
+        const now = new Date();
+        if (now < startDate || now > endDate) continue;
+        const key = ledgerKey(period, now, { startDate, endDate });
+        let usage = 0;
+        if (redisClient) {
+          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
+          if (cur) usage = parseFloat(cur);
+        }
+        budgets.push({
+          period,
+          usage,
+          budget: amount,
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+        });
+      }
+      const input = {
+        tenant,
+        route: req.routeOptions.url ?? req.url,
+        time: new Date().getHours(),
+        budgets,
+      };
+      const allow = await evaluatePolicy(input);
+      app.log.info({ input, allow }, "policy decision");
+      if (!allow) {
+        const decisionMs =
+          Number(process.hrtime.bigint() - startDecision) / 1e6;
+        for (const b of budgets) {
+          app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
+        }
+        app.log.warn({ decisionMs }, "policy denied");
+        return reply.code(403).send({ error: "Request denied by policy" });
+      }
+      for (const b of budgets) {
+        if (b.usage >= b.budget) {
+          const decisionMs =
+            Number(process.hrtime.bigint() - startDecision) / 1e6;
+          app.log.warn({
+            period: b.period,
+            usage: b.usage,
+            budget: b.budget,
+            decisionMs,
+          });
+          return reply.code(402).send({ error: "Budget exceeded" });
+        }
+      }
+      const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
+      app.log.info({ decisionMs }, "allow request");
+      const apiKeyHeader = req.headers.authorization as string | undefined;
+      const apiKey = apiKeyHeader?.startsWith("Bearer ")
+        ? apiKeyHeader.slice(7)
+        : apiKeyHeader || process.env.OPENAI_KEY;
+      if (!apiKey) {
+        return reply.code(400).send({ error: "Missing OpenAI key" });
+      }
+      const resp = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const json = await resp.json();
+      return reply.code(resp.status).send(json);
+    },
+  );
+
   const adminAuth = async (req: FastifyRequest, reply: FastifyReply) => {
     const key = req.headers["x-admin-key"] as string | undefined;
     if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
