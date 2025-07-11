@@ -6,9 +6,11 @@ Example request:
 
 ```bash
 curl -X POST -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <OPENAI_KEY>" \
      -H "X-Tenant-Id: demo" \
-     -d '{"model":"gpt-3.5-turbo","prompt":"hello"}' \
-    http://localhost:3000/v1/completions
+     -H "X-API-Key: <TENANT_API_KEY>" \
+     -d '{"model":"gpt-3.5-turbo","input":"hello"}' \
+    http://localhost:3000/v1/responses
 ```
 
 ### Manage rate limits

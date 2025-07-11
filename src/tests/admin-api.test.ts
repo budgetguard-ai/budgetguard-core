@@ -313,9 +313,9 @@ describe("admin endpoints", () => {
 
     let res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
-      headers: { Authorization: `Bearer ${key}` },
-      payload: { model: "gpt-3.5-turbo", prompt: "hi" },
+      url: "/v1/responses",
+      headers: { "x-api-key": key },
+      payload: { model: "gpt-3.5-turbo", input: "hi" },
     });
     console.log("Completion response status:", res.statusCode);
     console.log("Completion response body:", res.body);
@@ -330,9 +330,9 @@ describe("admin endpoints", () => {
 
     res = await app.inject({
       method: "POST",
-      url: "/v1/completions",
-      headers: { Authorization: `Bearer ${key}` },
-      payload: { model: "gpt-3.5-turbo", prompt: "hi" },
+      url: "/v1/responses",
+      headers: { "x-api-key": key },
+      payload: { model: "gpt-3.5-turbo", input: "hi" },
     });
 
     expect(res.statusCode).toBe(401);

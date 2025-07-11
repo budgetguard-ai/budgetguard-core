@@ -32,7 +32,7 @@ describe("policy evaluation", () => {
   it("allows under budget", async () => {
     const allow = await evaluatePolicy({
       tenant: "t1",
-      route: "/v1/completions",
+      route: "/v1/responses",
       time: 12,
       budgets: [{ period: "daily", usage: 1, budget: 10, start: "", end: "" }],
     });
@@ -42,7 +42,7 @@ describe("policy evaluation", () => {
   it("denies over budget", async () => {
     const allow = await evaluatePolicy({
       tenant: "t1",
-      route: "/v1/completions",
+      route: "/v1/responses",
       time: 12,
       budgets: [{ period: "daily", usage: 11, budget: 10, start: "", end: "" }],
     });
