@@ -30,7 +30,10 @@ const DEFAULT_BUDGET = Number(
 const BUDGET_PERIODS = getBudgetPeriods();
 
 export async function buildServer() {
-  const app = fastify({ logger: true });
+  const app = fastify({
+    logger: true,
+    ajv: { customOptions: { keywords: ["example"] } },
+  });
 
   await app.register(swagger, {
     openapi: {
@@ -1328,6 +1331,178 @@ export async function buildServer() {
         return reply.send({ ok: true });
       } catch {
         return reply.code(404).send({ error: "Budget not found" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/model-pricing",
+    {
+      preHandler: adminAuth,
+      schema: {
+        response: {
+          200: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+            example: [
+              {
+                id: 1,
+                model: "gpt-4",
+                versionTag: "gpt-4-2024-04-01",
+                inputPrice: "10",
+                cachedInputPrice: "2",
+                outputPrice: "30",
+                createdAt: "2024-04-01T00:00:00.000Z",
+                updatedAt: "2024-04-01T00:00:00.000Z",
+              },
+            ],
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (_req, reply) => {
+      const prisma = await getPrisma();
+      const rows = await prisma.modelPricing.findMany();
+      return reply.send(rows);
+    },
+  );
+
+  app.post(
+    "/admin/model-pricing",
+    {
+      preHandler: adminAuth,
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            model: { type: "string" },
+            versionTag: { type: "string" },
+            inputPrice: { type: "number" },
+            cachedInputPrice: { type: "number" },
+            outputPrice: { type: "number" },
+          },
+          required: [
+            "model",
+            "versionTag",
+            "inputPrice",
+            "cachedInputPrice",
+            "outputPrice",
+          ],
+          example: {
+            model: "gpt-4",
+            versionTag: "gpt-4-2024-04-01",
+            inputPrice: 10,
+            cachedInputPrice: 2,
+            outputPrice: 30,
+          },
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const body = req.body as {
+        model: string;
+        versionTag: string;
+        inputPrice: number;
+        cachedInputPrice: number;
+        outputPrice: number;
+      };
+      try {
+        const rec = await prisma.modelPricing.create({
+          data: {
+            model: body.model,
+            versionTag: body.versionTag,
+            inputPrice: body.inputPrice,
+            cachedInputPrice: body.cachedInputPrice,
+            outputPrice: body.outputPrice,
+          },
+        });
+        return reply.send(rec);
+      } catch {
+        return reply
+          .code(400)
+          .send({ error: "Unable to create model pricing" });
+      }
+    },
+  );
+
+  app.put(
+    "/admin/model-pricing/:idOrModel",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { idOrModel: { type: "string" } },
+          required: ["idOrModel"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            model: { type: "string" },
+            versionTag: { type: "string" },
+            inputPrice: { type: "number" },
+            cachedInputPrice: { type: "number" },
+            outputPrice: { type: "number" },
+          },
+          example: { outputPrice: 25 },
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { idOrModel } = req.params as { idOrModel: string };
+      const data = req.body as Partial<{
+        model: string;
+        versionTag: string;
+        inputPrice: number;
+        cachedInputPrice: number;
+        outputPrice: number;
+      }>;
+      const where = /^[0-9]+$/.test(idOrModel)
+        ? { id: Number(idOrModel) }
+        : { model: idOrModel };
+      try {
+        const updated = await prisma.modelPricing.update({ where, data });
+        return reply.send(updated);
+      } catch {
+        return reply.code(404).send({ error: "Model pricing not found" });
       }
     },
   );
