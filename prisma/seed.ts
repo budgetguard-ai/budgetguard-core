@@ -56,6 +56,63 @@ async function main() {
       });
     }
   }
+
+  const pricing = [
+    {
+      model: "gpt-4.1",
+      versionTag: "gpt-4.1-2025-04-14",
+      input: "10",
+      cachedInput: "2",
+      output: "30",
+    },
+    {
+      model: "gpt-4.1-mini",
+      versionTag: "gpt-4.1-mini-2025-04-14",
+      input: "5",
+      cachedInput: "1",
+      output: "15",
+    },
+    {
+      model: "gpt-4.1-nano",
+      versionTag: "gpt-4.1-nano-2025-04-14",
+      input: "1",
+      cachedInput: "0.2",
+      output: "3",
+    },
+    {
+      model: "gpt-4o",
+      versionTag: "gpt-4o-2025-05-10",
+      input: "5",
+      cachedInput: "1",
+      output: "15",
+    },
+    {
+      model: "gpt-4o-mini",
+      versionTag: "gpt-4o-mini-2025-05-10",
+      input: "3",
+      cachedInput: "0.6",
+      output: "10",
+    },
+  ];
+
+  for (const p of pricing) {
+    await prisma.modelPricing.upsert({
+      where: { model: p.model },
+      update: {
+        versionTag: p.versionTag,
+        inputPrice: new Prisma.Decimal(p.input),
+        cachedInputPrice: new Prisma.Decimal(p.cachedInput),
+        outputPrice: new Prisma.Decimal(p.output),
+      },
+      create: {
+        model: p.model,
+        versionTag: p.versionTag,
+        inputPrice: new Prisma.Decimal(p.input),
+        cachedInputPrice: new Prisma.Decimal(p.cachedInput),
+        outputPrice: new Prisma.Decimal(p.output),
+      },
+    });
+  }
 }
 
 main()

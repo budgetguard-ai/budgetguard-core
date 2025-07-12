@@ -156,7 +156,7 @@ Override the bundle path with `OPA_POLICY_PATH`. Hot‑reloading is enabled in d
 
 | Component    | Purpose                                             |
 | ------------ | --------------------------------------------------- |
-| **Postgres** | Tenants, API keys, budgets, immutable `UsageLedger` |
+| **Postgres** | Tenants, API keys, budgets, immutable `UsageLedger`, model pricing |
 | **Redis**    | Cached budgets & rate‑limit counters (fast path)    |
 
 Migrations (Prisma):

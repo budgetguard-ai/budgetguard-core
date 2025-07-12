@@ -11,6 +11,7 @@ All state is stored in Postgres and cached in Redis.
 | Alert | Spend notifications |
 | AuditLog | Immutable action log |
 | UsageLedger | Request records |
+| ModelPricing | Token pricing per model |
 
 Run migrations during development with:
 
