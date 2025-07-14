@@ -31,3 +31,30 @@ Retrieve the current setting:
 curl -H "X-Admin-Key: <ADMIN_KEY>" \
      http://localhost:3000/admin/tenant/1/ratelimit
 ```
+
+### Manage model pricing
+
+List current model pricing records:
+
+```bash
+curl -H "X-Admin-Key: <ADMIN_KEY>" \
+     http://localhost:3000/admin/model-pricing
+```
+
+Add a new pricing record:
+
+```bash
+curl -X POST -H "X-Admin-Key: <ADMIN_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"model":"gpt-4","versionTag":"gpt-4-2024-04-01","inputPrice":10,"cachedInputPrice":2,"outputPrice":30}' \
+     http://localhost:3000/admin/model-pricing
+```
+
+Update an existing record by model name:
+
+```bash
+curl -X PUT -H "X-Admin-Key: <ADMIN_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"outputPrice":25}' \
+     http://localhost:3000/admin/model-pricing/gpt-4
+```
