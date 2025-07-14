@@ -11,21 +11,15 @@ export interface CountResult {
 }
 
 import { encoding_for_model, TiktokenModel } from "tiktoken";
+import { PrismaClient } from "@prisma/client";
 
-const PRICE: Record<string, { prompt: number; completion: number }> = {
-  "gpt-3.5-turbo": { prompt: 0.001, completion: 0.002 },
-  "gpt-4": { prompt: 0.03, completion: 0.06 },
-  "gpt-4-turbo": { prompt: 0.01, completion: 0.03 },
-};
+// Fallback pricing for unknown models (gpt-3.5-turbo equivalent)
+const FALLBACK_PRICING = { prompt: 0.001, completion: 0.002 };
 
-function priceFor(model: string) {
-  for (const key of Object.keys(PRICE)) {
-    if (model.startsWith(key)) return PRICE[key];
-  }
-  return PRICE["gpt-3.5-turbo"];
-}
-
-export function countTokensAndCost(input: CountInput): CountResult {
+export async function countTokensAndCost(
+  input: CountInput,
+  prisma: PrismaClient,
+): Promise<CountResult> {
   let enc: ReturnType<typeof encoding_for_model>;
   try {
     enc = encoding_for_model(input.model as TiktokenModel);
@@ -35,7 +29,26 @@ export function countTokensAndCost(input: CountInput): CountResult {
   let promptTokens = 0;
   let completionTokens = 0;
 
-  const price = priceFor(input.model);
+  // Lookup pricing from database
+  let price = FALLBACK_PRICING;
+  try {
+    const modelPricing = await prisma.modelPricing.findUnique({
+      where: { model: input.model },
+    });
+    if (modelPricing) {
+      price = {
+        prompt: Number(modelPricing.inputPrice),
+        completion: Number(modelPricing.outputPrice),
+      };
+    } else {
+      console.log(
+        `No pricing found for model ${input.model}, using fallback pricing`,
+      );
+    }
+  } catch (error) {
+    console.error(`Error fetching pricing for model ${input.model}:`, error);
+    console.log(`Using fallback pricing for model ${input.model}`);
+  }
 
   if (typeof input.prompt === "string") {
     if (input.prompt) {

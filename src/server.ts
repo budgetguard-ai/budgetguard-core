@@ -142,19 +142,23 @@ export async function buildServer() {
       }
 
       if (model && (body?.prompt || body?.messages || body?.input)) {
+        const prismaClient = await getPrisma();
         const {
           promptTokens,
           completionTokens,
           usd: cost,
-        } = countTokensAndCost({
-          model,
-          prompt:
-            (body?.prompt as string) ||
-            ((body?.messages as Array<{ role: string; content: string }>) ??
-              []) ||
-            (body?.input as string),
-          completion,
-        });
+        } = await countTokensAndCost(
+          {
+            model,
+            prompt:
+              (body?.prompt as string) ||
+              ((body?.messages as Array<{ role: string; content: string }>) ??
+                []) ||
+              (body?.input as string),
+            completion,
+          },
+          prismaClient,
+        );
         usd = cost;
         promptTok = promptTokens;
         compTok = completionTokens;

@@ -17,16 +17,14 @@ function watchPolicyFile() {
       if (eventType === "change" || eventType === "rename") {
         try {
           await load();
-          // eslint-disable-next-line no-console
+
           console.log(`reloaded policy from ${POLICY_PATH}`);
         } catch (err) {
-          // eslint-disable-next-line no-console
           console.error("failed to reload policy", err);
         }
       }
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error(`failed to watch policy file ${POLICY_PATH}`, err);
   }
 }
