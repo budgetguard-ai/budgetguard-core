@@ -14,11 +14,11 @@ export class OpenAIProvider implements Provider {
     this.baseUrl = config.baseUrl || "https://api.openai.com";
   }
 
-  async chatCompletion(request: CompletionRequest): Promise<{
-    status: number;
-    data: CompletionResponse;
-  }> {
-    const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+  private async requestEndpoint(
+    path: string,
+    request: CompletionRequest,
+  ): Promise<{ status: number; data: CompletionResponse }> {
+    const resp = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -34,23 +34,17 @@ export class OpenAIProvider implements Provider {
     };
   }
 
+  async chatCompletion(request: CompletionRequest): Promise<{
+    status: number;
+    data: CompletionResponse;
+  }> {
+    return this.requestEndpoint("/v1/chat/completions", request);
+  }
+
   async responses(request: CompletionRequest): Promise<{
     status: number;
     data: CompletionResponse;
   }> {
-    const resp = await fetch(`${this.baseUrl}/v1/responses`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify(request),
-    });
-
-    const json = (await resp.json()) as CompletionResponse;
-    return {
-      status: resp.status,
-      data: json,
-    };
+    return this.requestEndpoint("/v1/responses", request);
   }
 }
