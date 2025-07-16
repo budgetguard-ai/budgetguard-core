@@ -1,0 +1,56 @@
+import {
+  Provider,
+  CompletionRequest,
+  CompletionResponse,
+  ProviderConfig,
+} from "./base.js";
+
+export class OpenAIProvider implements Provider {
+  private config: ProviderConfig;
+  private baseUrl: string;
+
+  constructor(config: ProviderConfig) {
+    this.config = config;
+    this.baseUrl = config.baseUrl || "https://api.openai.com";
+  }
+
+  async chatCompletion(request: CompletionRequest): Promise<{
+    status: number;
+    data: CompletionResponse;
+  }> {
+    const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify(request),
+    });
+
+    const json = (await resp.json()) as CompletionResponse;
+    return {
+      status: resp.status,
+      data: json,
+    };
+  }
+
+  async responses(request: CompletionRequest): Promise<{
+    status: number;
+    data: CompletionResponse;
+  }> {
+    const resp = await fetch(`${this.baseUrl}/v1/responses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify(request),
+    });
+
+    const json = (await resp.json()) as CompletionResponse;
+    return {
+      status: resp.status,
+      data: json,
+    };
+  }
+}
