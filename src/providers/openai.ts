@@ -14,6 +14,12 @@ export class OpenAIProvider implements Provider {
     this.baseUrl = config.baseUrl || "https://api.openai.com";
   }
 
+  private isValidCompletionResponse(data: unknown): data is CompletionResponse {
+    // Allow any object structure since OpenAI responses can vary
+    // This provides basic validation while remaining flexible
+    return typeof data === "object" && data !== null && !Array.isArray(data);
+  }
+
   private async requestEndpoint(
     path: string,
     request: CompletionRequest,
@@ -27,10 +33,16 @@ export class OpenAIProvider implements Provider {
       body: JSON.stringify(request),
     });
 
-    const json = (await resp.json()) as CompletionResponse;
+    const json = await resp.json();
+    if (!this.isValidCompletionResponse(json)) {
+      throw new Error(
+        `Invalid response structure from OpenAI API: ${typeof json}`,
+      );
+    }
+
     return {
       status: resp.status,
-      data: json,
+      data: json as CompletionResponse,
     };
   }
 
