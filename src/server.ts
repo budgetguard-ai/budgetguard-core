@@ -20,6 +20,8 @@ import {
 import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 import { readRateLimit, writeRateLimit } from "./rate-limit.js";
+import { OpenAIProvider } from "./providers/openai.js";
+import type { CompletionRequest } from "./providers/base.js";
 
 dotenv.config();
 
@@ -394,16 +396,11 @@ export async function buildServer() {
       if (!apiKey) {
         return reply.code(400).send({ error: "Missing OpenAI key" });
       }
-      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(req.body),
-      });
-      const json = await resp.json();
-      return reply.code(resp.status).send(json);
+      const provider = new OpenAIProvider({ apiKey });
+      const result = await provider.chatCompletion(
+        req.body as CompletionRequest,
+      );
+      return reply.code(result.status).send(result.data);
     },
   );
 
@@ -557,16 +554,9 @@ export async function buildServer() {
       if (!apiKey) {
         return reply.code(400).send({ error: "Missing OpenAI key" });
       }
-      const resp = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(req.body),
-      });
-      const json = await resp.json();
-      return reply.code(resp.status).send(json);
+      const provider = new OpenAIProvider({ apiKey });
+      const result = await provider.responses(req.body as CompletionRequest);
+      return reply.code(result.status).send(result.data);
     },
   );
 
