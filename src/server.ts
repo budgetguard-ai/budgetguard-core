@@ -1341,13 +1341,14 @@ export async function buildServer() {
             example: [
               {
                 id: 1,
-                model: "gpt-4",
-                versionTag: "gpt-4-2024-04-01",
-                inputPrice: "10",
-                cachedInputPrice: "2",
-                outputPrice: "30",
-                createdAt: "2024-04-01T00:00:00.000Z",
-                updatedAt: "2024-04-01T00:00:00.000Z",
+                model: "gpt-4.1",
+                versionTag: "gpt-4.1-2025-04-14",
+                inputPrice: "2.00",
+                cachedInputPrice: "0.50",
+                outputPrice: "8.00",
+                provider: "openai",
+                createdAt: "2025-04-14T00:00:00.000Z",
+                updatedAt: "2025-04-14T00:00:00.000Z",
               },
             ],
           },
@@ -1384,6 +1385,7 @@ export async function buildServer() {
             inputPrice: { type: "number" },
             cachedInputPrice: { type: "number" },
             outputPrice: { type: "number" },
+            provider: { type: "string" },
           },
           required: [
             "model",
@@ -1393,11 +1395,12 @@ export async function buildServer() {
             "outputPrice",
           ],
           example: {
-            model: "gpt-4",
-            versionTag: "gpt-4-2024-04-01",
-            inputPrice: 10,
-            cachedInputPrice: 2,
-            outputPrice: 30,
+            model: "gpt-4.1",
+            versionTag: "gpt-4.1-2025-04-14",
+            inputPrice: 2.0,
+            cachedInputPrice: 0.5,
+            outputPrice: 8.0,
+            provider: "openai",
           },
         },
         response: {
@@ -1423,6 +1426,7 @@ export async function buildServer() {
         inputPrice: number;
         cachedInputPrice: number;
         outputPrice: number;
+        provider?: string;
       };
       try {
         const rec = await prisma.modelPricing.create({
@@ -1432,6 +1436,7 @@ export async function buildServer() {
             inputPrice: body.inputPrice,
             cachedInputPrice: body.cachedInputPrice,
             outputPrice: body.outputPrice,
+            provider: body.provider || "openai",
           },
         });
         return reply.send(rec);
@@ -1461,6 +1466,7 @@ export async function buildServer() {
             inputPrice: { type: "number" },
             cachedInputPrice: { type: "number" },
             outputPrice: { type: "number" },
+            provider: { type: "string" },
           },
           example: { outputPrice: 25 },
         },
@@ -1488,6 +1494,7 @@ export async function buildServer() {
         inputPrice: number;
         cachedInputPrice: number;
         outputPrice: number;
+        provider: string;
       }>;
       const where = /^[0-9]+$/.test(idOrModel)
         ? { id: Number(idOrModel) }

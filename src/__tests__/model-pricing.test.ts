@@ -18,6 +18,7 @@ vi.mock("@prisma/client", () => {
     inputPrice: string;
     cachedInputPrice: string;
     outputPrice: string;
+    provider: string;
   }
   class Collection<T extends { id: number }> {
     rows: T[] = [];
@@ -102,6 +103,7 @@ describe("model pricing admin endpoints", () => {
         inputPrice: 1,
         cachedInputPrice: 0.5,
         outputPrice: 2,
+        provider: "openai",
       },
     });
     expect(create.statusCode).toBe(200);

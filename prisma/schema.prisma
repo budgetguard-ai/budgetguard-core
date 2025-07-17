@@ -104,6 +104,7 @@ model ModelPricing {
   inputPrice       Decimal
   cachedInputPrice Decimal
   outputPrice      Decimal
+  provider         String   @default("openai")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
