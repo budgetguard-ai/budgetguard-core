@@ -58,7 +58,7 @@ export async function readBudget({
         startDate: fromDb.startDate ?? new Date(),
         endDate: fromDb.endDate ?? new Date(),
       };
-      if (redis) await redis.set(key, serialize(data));
+      if (redis) await redis.setEx(key, 3600, serialize(data)); // 1 hour TTL
       return data;
     }
   }
@@ -91,7 +91,7 @@ export async function readBudget({
     endDate.setUTCHours(23, 59, 59, 999);
   }
   const data: BudgetData = { amount, startDate, endDate };
-  if (redis) await redis.set(key, serialize(data));
+  if (redis) await redis.setEx(key, 3600, serialize(data)); // 1 hour TTL
   return data;
 }
 
@@ -105,7 +105,7 @@ export async function writeBudget(
 ): Promise<void> {
   if (redis) {
     const data: BudgetData = { amount, startDate, endDate };
-    await redis.set(`budget:${tenant}:${period}`, serialize(data));
+    await redis.setEx(`budget:${tenant}:${period}`, 3600, serialize(data)); // 1 hour TTL
   }
 }
 

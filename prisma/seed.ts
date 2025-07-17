@@ -93,6 +93,13 @@ async function main() {
       cachedInput: "0.6",
       output: "10",
     },
+    {
+      model: "o1",
+      versionTag: "o1-2024-12-17",
+      input: "15",
+      cachedInput: "7.5",
+      output: "60",
+    },
   ];
 
   for (const p of pricing) {
@@ -103,6 +110,7 @@ async function main() {
         inputPrice: new Prisma.Decimal(p.input),
         cachedInputPrice: new Prisma.Decimal(p.cachedInput),
         outputPrice: new Prisma.Decimal(p.output),
+        provider: "openai",
       },
       create: {
         model: p.model,
@@ -110,6 +118,7 @@ async function main() {
         inputPrice: new Prisma.Decimal(p.input),
         cachedInputPrice: new Prisma.Decimal(p.cachedInput),
         outputPrice: new Prisma.Decimal(p.output),
+        provider: "openai",
       },
     });
   }
