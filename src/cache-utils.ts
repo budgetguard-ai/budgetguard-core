@@ -21,7 +21,7 @@ export async function clearTenantCache(
   for (const pattern of patterns) {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) {
-      await redis.del(...keys);
+      await redis.del(keys);
     }
   }
 }
@@ -41,7 +41,7 @@ export async function clearBudgetCache(
   } else {
     const keys = await redis.keys(`budget:${tenant}:*`);
     if (keys.length > 0) {
-      await redis.del(...keys);
+      await redis.del(keys);
     }
   }
 }
