@@ -8,7 +8,7 @@ export interface CacheOptions {
  */
 export async function clearTenantCache(
   tenant: string,
-  redis?: ReturnType<typeof import("redis").createClient>
+  redis?: ReturnType<typeof import("redis").createClient>,
 ): Promise<void> {
   if (!redis) return;
 
@@ -32,7 +32,7 @@ export async function clearTenantCache(
 export async function clearBudgetCache(
   tenant: string,
   period?: string,
-  redis?: ReturnType<typeof import("redis").createClient>
+  redis?: ReturnType<typeof import("redis").createClient>,
 ): Promise<void> {
   if (!redis) return;
 
@@ -52,10 +52,10 @@ export async function clearBudgetCache(
 export async function setCacheWithTTL(
   key: string,
   value: string,
-  options: CacheOptions
+  options: CacheOptions,
 ): Promise<void> {
   if (!options.redis) return;
-  
+
   const ttl = options.ttl || 3600; // Default 1 hour
   await options.redis.setEx(key, ttl, value);
 }
