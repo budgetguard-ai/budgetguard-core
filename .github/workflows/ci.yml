@@ -47,6 +47,7 @@ jobs:
           chmod +x opa
           sudo mv opa /usr/local/bin/opa
       - run: npx prisma migrate deploy
+      - run: npm run seed
       - run: npm run lint
       - run: npm run build
       - run: npm run test

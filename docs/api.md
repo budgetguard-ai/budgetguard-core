@@ -9,7 +9,7 @@ curl -X POST -H "Content-Type: application/json" \
      -H "Authorization: Bearer <OPENAI_KEY>" \
      -H "X-Tenant-Id: demo" \
      -H "X-API-Key: <TENANT_API_KEY>" \
-     -d '{"model":"gpt-3.5-turbo","input":"hello"}' \
+     -d '{"model":"gpt-4.1","input":"hello"}' \
     http://localhost:3000/v1/responses
 ```
 
@@ -46,7 +46,7 @@ Add a new pricing record:
 ```bash
 curl -X POST -H "X-Admin-Key: <ADMIN_KEY>" \
      -H "Content-Type: application/json" \
-     -d '{"model":"gpt-4","versionTag":"gpt-4-2024-04-01","inputPrice":10,"cachedInputPrice":2,"outputPrice":30}' \
+     -d '{"model":"gpt-4.1","versionTag":"gpt-4.1-2025-04-14","inputPrice":2.00,"cachedInputPrice":0.50,"outputPrice":8.00,"provider":"openai"}' \
      http://localhost:3000/admin/model-pricing
 ```
 
@@ -56,5 +56,5 @@ Update an existing record by model name:
 curl -X PUT -H "X-Admin-Key: <ADMIN_KEY>" \
      -H "Content-Type: application/json" \
      -d '{"outputPrice":25}' \
-     http://localhost:3000/admin/model-pricing/gpt-4
+     http://localhost:3000/admin/model-pricing/gpt-4.1
 ```

@@ -21,7 +21,7 @@ export async function readRateLimit({
   const rec = await prisma.tenant.findFirst({ where: { name: tenant } });
   const value = rec?.rateLimitPerMin;
   const limit = value === null || value === undefined ? defaultLimit : value;
-  if (redis) await redis.set(key, String(limit));
+  if (redis) await redis.setEx(key, 3600, String(limit)); // 1 hour TTL
   return limit;
 }
 
@@ -31,7 +31,7 @@ export async function writeRateLimit(
   redis?: ReturnType<typeof import("redis").createClient>,
 ): Promise<void> {
   if (redis) {
-    await redis.set(`${keyPrefix}${tenant}`, String(limit));
+    await redis.setEx(`${keyPrefix}${tenant}`, 3600, String(limit)); // 1 hour TTL
   }
 }
 

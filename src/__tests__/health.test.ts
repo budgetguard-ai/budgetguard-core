@@ -13,6 +13,9 @@ vi.mock("redis", () => {
     async set(key: string, val: string) {
       this.data[key] = val;
     }
+    async setEx(key: string, _ttl: number, val: string) {
+      this.data[key] = val;
+    }
   }
   return { createClient: () => new FakeRedis() };
 });
