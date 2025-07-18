@@ -5,6 +5,8 @@ import {
   ProviderConfig,
 } from "./base.js";
 
+const DEFAULT_MAX_TOKENS = 4096; // or whatever default value is appropriate
+
 interface AnthropicMessage {
   role: "user" | "assistant";
   content: string;
