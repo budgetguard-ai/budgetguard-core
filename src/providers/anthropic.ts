@@ -1,0 +1,209 @@
+import {
+  Provider,
+  CompletionRequest,
+  CompletionResponse,
+  ProviderConfig,
+} from "./base.js";
+
+interface AnthropicMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface AnthropicRequest {
+  model: string;
+  max_tokens: number;
+  messages: AnthropicMessage[];
+  system?: string;
+  temperature?: number;
+  top_p?: number;
+  stop_sequences?: string[];
+}
+
+interface AnthropicResponse {
+  id: string;
+  type: "message";
+  role: "assistant";
+  content: Array<{
+    type: "text";
+    text: string;
+  }>;
+  model: string;
+  stop_reason: string;
+  stop_sequence?: string;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
+export class AnthropicProvider implements Provider {
+  private config: ProviderConfig;
+  private baseUrl: string;
+
+  constructor(config: ProviderConfig) {
+    this.config = config;
+    this.baseUrl = config.baseUrl || "https://api.anthropic.com";
+  }
+
+  private convertRequestToAnthropic(
+    request: CompletionRequest,
+  ): AnthropicRequest {
+    // Convert OpenAI-style messages to Anthropic format
+    const messages: AnthropicMessage[] = [];
+    let system: string | undefined;
+
+    if (request.messages) {
+      for (const message of request.messages) {
+        if (message.role === "system") {
+          // Anthropic handles system messages differently
+          system = message.content;
+        } else if (message.role === "user" || message.role === "assistant") {
+          messages.push({
+            role: message.role,
+            content: message.content,
+          });
+        }
+      }
+    }
+
+    // If there's a prompt field instead of messages, treat it as a user message
+    if (request.prompt && !request.messages) {
+      messages.push({
+        role: "user",
+        content: request.prompt,
+      });
+    }
+
+    const requestWithMaxTokens = request as CompletionRequest & {
+      max_tokens?: number;
+    };
+
+    const anthropicRequest: AnthropicRequest = {
+      model: request.model,
+      max_tokens: requestWithMaxTokens.max_tokens || 4096,
+      messages,
+    };
+
+    if (system) {
+      anthropicRequest.system = system;
+    }
+
+    // Pass through optional parameters
+    const requestWithOptionals = request as CompletionRequest & {
+      temperature?: number;
+      top_p?: number;
+      stop?: string | string[];
+    };
+
+    if (requestWithOptionals.temperature !== undefined) {
+      anthropicRequest.temperature = requestWithOptionals.temperature;
+    }
+    if (requestWithOptionals.top_p !== undefined) {
+      anthropicRequest.top_p = requestWithOptionals.top_p;
+    }
+    if (requestWithOptionals.stop !== undefined) {
+      anthropicRequest.stop_sequences = Array.isArray(requestWithOptionals.stop)
+        ? requestWithOptionals.stop
+        : [requestWithOptionals.stop];
+    }
+
+    return anthropicRequest;
+  }
+
+  private convertResponseFromAnthropic(
+    response: AnthropicResponse,
+  ): CompletionResponse {
+    // Convert Anthropic response to OpenAI-compatible format
+    const content = response.content
+      .filter((item) => item.type === "text")
+      .map((item) => item.text)
+      .join("");
+
+    return {
+      choices: [
+        {
+          message: {
+            content,
+          },
+        },
+      ],
+      model: response.model,
+      usage: {
+        prompt_tokens: response.usage.input_tokens,
+        completion_tokens: response.usage.output_tokens,
+        total_tokens:
+          response.usage.input_tokens + response.usage.output_tokens,
+      },
+    };
+  }
+
+  private isValidAnthropicResponse(data: unknown): data is AnthropicResponse {
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      !Array.isArray(data) &&
+      "content" in data &&
+      "model" in data &&
+      "usage" in data
+    );
+  }
+
+  private async requestEndpoint(
+    path: string,
+    request: CompletionRequest,
+  ): Promise<{ status: number; data: CompletionResponse }> {
+    const anthropicRequest = this.convertRequestToAnthropic(request);
+
+    const resp = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.config.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(anthropicRequest),
+    });
+
+    const json = await resp.json();
+
+    if (!resp.ok) {
+      // Return error in OpenAI-compatible format
+      return {
+        status: resp.status,
+        data: {
+          error: json,
+        },
+      };
+    }
+
+    if (!this.isValidAnthropicResponse(json)) {
+      throw new Error(
+        `Invalid response structure from Anthropic API: ${typeof json}`,
+      );
+    }
+
+    const convertedResponse = this.convertResponseFromAnthropic(json);
+
+    return {
+      status: resp.status,
+      data: convertedResponse,
+    };
+  }
+
+  async chatCompletion(request: CompletionRequest): Promise<{
+    status: number;
+    data: CompletionResponse;
+  }> {
+    return this.requestEndpoint("/v1/messages", request);
+  }
+
+  async responses(request: CompletionRequest): Promise<{
+    status: number;
+    data: CompletionResponse;
+  }> {
+    // Anthropic doesn't have a separate responses endpoint
+    // Route to the same messages endpoint
+    return this.requestEndpoint("/v1/messages", request);
+  }
+}

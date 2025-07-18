@@ -50,6 +50,15 @@ vi.mock("@prisma/client", () => {
     startDate?: Date;
     endDate?: Date;
   }
+  interface ModelPricing {
+    id: number;
+    model: string;
+    versionTag: string;
+    inputPrice: string;
+    cachedInputPrice: string;
+    outputPrice: string;
+    provider: string;
+  }
   class Collection<T extends { id: number }> {
     rows: T[] = [];
     async create({ data }: { data: Omit<T, "id"> }): Promise<T> {
@@ -57,8 +66,22 @@ vi.mock("@prisma/client", () => {
       this.rows.push(row);
       return row;
     }
-    async findUnique({ where }: { where: { id: number } }): Promise<T | null> {
-      return this.rows.find((r) => r.id === where.id) ?? null;
+    async findUnique({
+      where,
+    }: {
+      where: { id?: number; model?: string };
+    }): Promise<T | null> {
+      if (where.id !== undefined) {
+        return this.rows.find((r) => r.id === where.id) ?? null;
+      }
+      if (where.model !== undefined) {
+        return (
+          this.rows.find(
+            (r) => (r as T & { model?: string }).model === where.model,
+          ) ?? null
+        );
+      }
+      return null;
     }
     async findFirst({ where }: { where: Partial<T> }): Promise<T | null> {
       return (
@@ -102,6 +125,21 @@ vi.mock("@prisma/client", () => {
   class FakePrisma {
     tenant = new Collection<Tenant>();
     budget = new Collection<Budget>();
+    modelPricing = new Collection<ModelPricing>();
+
+    constructor() {
+      // Pre-seed with gpt-4o-mini model for tests
+      this.modelPricing.rows.push({
+        id: 1,
+        model: "gpt-4o-mini",
+        versionTag: "gpt-4o-mini-2024-07-18",
+        inputPrice: "0.15",
+        cachedInputPrice: "0.075",
+        outputPrice: "0.60",
+        provider: "openai",
+      });
+    }
+
     async $connect() {}
     async $disconnect() {}
   }
@@ -175,7 +213,7 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
-      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
+      payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -186,7 +224,7 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
-      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
+      payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: "Request denied by policy" });
@@ -207,7 +245,7 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
-      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
+      payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -231,7 +269,7 @@ describe("budget enforcement", () => {
       method: "POST",
       url: "/v1/responses",
       headers: { "x-tenant-id": "t1" },
-      payload: { model: "gpt-3.5-turbo", input: "hi", max_tokens: 1 },
+      payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
     const cached = JSON.parse((await redis.get("budget:t1:daily"))!);

@@ -157,6 +157,59 @@ async function main() {
       },
     });
   }
+
+  // Seed Anthropic Claude models
+  const anthropicModels = [
+    {
+      model: "claude-opus-4-0",
+      versionTag: "claude-opus-4-0-20250514",
+      input: "15.00",
+      cachedInput: "1.50",
+      output: "75.00",
+    },
+    {
+      model: "claude-sonnet-4-0",
+      versionTag: "claude-sonnet-4-0-20250514",
+      input: "3.00",
+      cachedInput: "0.30",
+      output: "15.00",
+    },
+    {
+      model: "claude-3-5-sonnet-latest",
+      versionTag: "claude-3-5-sonnet-20241022",
+      input: "3.00",
+      cachedInput: "0.30",
+      output: "15.00",
+    },
+    {
+      model: "claude-3-5-haiku-latest",
+      versionTag: "claude-3-5-haiku-20241022",
+      input: "0.80",
+      cachedInput: "0.08",
+      output: "4.00",
+    },
+  ];
+
+  for (const p of anthropicModels) {
+    await prisma.modelPricing.upsert({
+      where: { model: p.model },
+      update: {
+        versionTag: p.versionTag,
+        inputPrice: new Prisma.Decimal(p.input),
+        cachedInputPrice: new Prisma.Decimal(p.cachedInput),
+        outputPrice: new Prisma.Decimal(p.output),
+        provider: "anthropic",
+      },
+      create: {
+        model: p.model,
+        versionTag: p.versionTag,
+        inputPrice: new Prisma.Decimal(p.input),
+        cachedInputPrice: new Prisma.Decimal(p.cachedInput),
+        outputPrice: new Prisma.Decimal(p.output),
+        provider: "anthropic",
+      },
+    });
+  }
 }
 
 main()
