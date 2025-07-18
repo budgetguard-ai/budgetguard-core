@@ -52,7 +52,7 @@ export async function readBudget({
     const fromDb = await prisma.budget.findFirst({
       where: { tenantId: tenantRecord.id, period },
     });
-    if (fromDb && fromDb.startDate && fromDb.endDate) {
+    if (fromDb && fromDb.startDate !== null && fromDb.endDate !== null) {
       const data: BudgetData = {
         amount: parseFloat(fromDb.amountUsd.toString()),
         startDate: fromDb.startDate,

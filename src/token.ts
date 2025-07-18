@@ -16,6 +16,7 @@ export interface TokenCountResult {
 // Fallback pricing for unknown models (gpt-3.5-turbo equivalent)
 // Prices are in USD per 1 million tokens
 const FALLBACK_PRICING = { prompt: 1, completion: 2 };
+const FALLBACK_ENCODING = "cl100k_base";
 
 export async function countTokensAndCost(
   input: TokenCountInput,
@@ -27,7 +28,7 @@ export async function countTokensAndCost(
     enc = encoding_for_model(input.model as TiktokenModel);
   } catch {
     // If encoding_for_model fails, fallback to cl100k_base encoding
-    enc = get_encoding("cl100k_base");
+    enc = get_encoding(FALLBACK_ENCODING);
   }
   let promptTokens = 0;
   let completionTokens = 0;
