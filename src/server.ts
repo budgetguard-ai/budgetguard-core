@@ -20,8 +20,8 @@ import {
 import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 import { readRateLimit, writeRateLimit } from "./rate-limit.js";
-import { OpenAIProvider } from "./providers/openai.js";
 import type { CompletionRequest } from "./providers/base.js";
+import { getProviderForModel } from "./provider-selector.js";
 
 dotenv.config();
 
@@ -279,6 +279,20 @@ export async function buildServer() {
           },
           {
             in: "header",
+            name: "X-OpenAI-Key",
+            schema: { type: "string" },
+            required: false,
+            description: "OpenAI API key for OpenAI models",
+          },
+          {
+            in: "header",
+            name: "X-Anthropic-Key",
+            schema: { type: "string" },
+            required: false,
+            description: "Anthropic API key for Claude models",
+          },
+          {
+            in: "header",
             name: "X-API-Key",
             schema: { type: "string" },
             required: false,
@@ -391,15 +405,25 @@ export async function buildServer() {
       }
       const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
       app.log.info({ decisionMs }, "allow request");
-      const apiKey =
-        (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY;
-      if (!apiKey) {
-        return reply.code(400).send({ error: "Missing OpenAI key" });
+
+      const body = req.body as CompletionRequest;
+      const model = body.model;
+
+      const provider = await getProviderForModel(model, await getPrisma(), {
+        openaiApiKey:
+          (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY,
+        anthropicApiKey:
+          (req.headers["x-anthropic-key"] as string) ||
+          process.env.ANTHROPIC_API_KEY,
+      });
+
+      if (!provider) {
+        return reply
+          .code(400)
+          .send({ error: `No provider configured for model: ${model}` });
       }
-      const provider = new OpenAIProvider({ apiKey });
-      const result = await provider.chatCompletion(
-        req.body as CompletionRequest,
-      );
+
+      const result = await provider.chatCompletion(body);
       return reply.code(result.status).send(result.data);
     },
   );
@@ -433,7 +457,21 @@ export async function buildServer() {
             name: "Authorization",
             schema: { type: "string" },
             required: false,
-            description: "Bearer <OPENAI_KEY>",
+            description: "Bearer <API_KEY>",
+          },
+          {
+            in: "header",
+            name: "X-OpenAI-Key",
+            schema: { type: "string" },
+            required: false,
+            description: "OpenAI API key for OpenAI models",
+          },
+          {
+            in: "header",
+            name: "X-Anthropic-Key",
+            schema: { type: "string" },
+            required: false,
+            description: "Anthropic API key for Claude models",
           },
           {
             in: "header",
@@ -547,15 +585,25 @@ export async function buildServer() {
       }
       const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
       app.log.info({ decisionMs }, "allow request");
-      const apiKeyHeader = req.headers.authorization as string | undefined;
-      const apiKey = apiKeyHeader?.startsWith("Bearer ")
-        ? apiKeyHeader.slice(7)
-        : apiKeyHeader || process.env.OPENAI_KEY;
-      if (!apiKey) {
-        return reply.code(400).send({ error: "Missing OpenAI key" });
+
+      const body = req.body as CompletionRequest;
+      const model = body.model;
+
+      const provider = await getProviderForModel(model, await getPrisma(), {
+        openaiApiKey:
+          (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY,
+        anthropicApiKey:
+          (req.headers["x-anthropic-key"] as string) ||
+          process.env.ANTHROPIC_API_KEY,
+      });
+
+      if (!provider) {
+        return reply
+          .code(400)
+          .send({ error: `No provider configured for model: ${model}` });
       }
-      const provider = new OpenAIProvider({ apiKey });
-      const result = await provider.responses(req.body as CompletionRequest);
+
+      const result = await provider.responses(body);
       return reply.code(result.status).send(result.data);
     },
   );

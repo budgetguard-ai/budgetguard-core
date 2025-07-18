@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { getProviderForModel } from "../provider-selector.js";
 import { OpenAIProvider } from "../providers/openai.js";
+import { AnthropicProvider } from "../providers/anthropic.js";
 
 describe("Provider Integration Tests", () => {
   it("verifies OpenAI models route to OpenAI provider", async () => {
@@ -45,6 +46,49 @@ describe("Provider Integration Tests", () => {
       );
 
       expect(unknownProvider).toBeNull();
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+  it("verifies Anthropic Claude models route to Anthropic provider", async () => {
+    const prisma = new PrismaClient();
+
+    try {
+      await prisma.$connect();
+
+      // Test Claude Sonnet model
+      const claudeSonnetProvider = await getProviderForModel(
+        "claude-3-5-sonnet-latest",
+        prisma,
+        {
+          anthropicApiKey: "test-anthropic-key",
+        },
+      );
+
+      expect(claudeSonnetProvider).toBeInstanceOf(AnthropicProvider);
+
+      // Test Claude Haiku model
+      const claudeHaikuProvider = await getProviderForModel(
+        "claude-3-5-haiku-latest",
+        prisma,
+        {
+          anthropicApiKey: "test-anthropic-key",
+        },
+      );
+
+      expect(claudeHaikuProvider).toBeInstanceOf(AnthropicProvider);
+
+      // Test Claude Opus model
+      const claudeOpusProvider = await getProviderForModel(
+        "claude-opus-4-0",
+        prisma,
+        {
+          anthropicApiKey: "test-anthropic-key",
+        },
+      );
+
+      expect(claudeOpusProvider).toBeInstanceOf(AnthropicProvider);
     } finally {
       await prisma.$disconnect();
     }

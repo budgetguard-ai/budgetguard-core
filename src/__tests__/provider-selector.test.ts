@@ -5,6 +5,7 @@ import {
   DatabaseProviderSelector,
 } from "../provider-selector.js";
 import { OpenAIProvider } from "../providers/openai.js";
+import { AnthropicProvider } from "../providers/anthropic.js";
 
 vi.mock("@prisma/client", () => {
   class MockPrisma {
@@ -120,18 +121,56 @@ describe("Provider Selection Logic", () => {
     );
   });
 
-  it("returns null for unsupported provider", async () => {
+  it("returns Anthropic provider for Claude models", async () => {
     mockPrisma.modelPricing.findUnique.mockResolvedValue({
       id: 4,
-      model: "claude-3",
+      model: "claude-3-5-sonnet-latest",
+      versionTag: "claude-3-5-sonnet-20241022",
+      inputPrice: "3.00",
+      cachedInputPrice: "0.30",
+      outputPrice: "15.00",
       provider: "anthropic",
     });
 
-    const provider = await getProviderForModel("claude-3", mockPrisma, {
-      openaiApiKey: "test-key",
+    const provider = await getProviderForModel(
+      "claude-3-5-sonnet-latest",
+      mockPrisma,
+      {
+        anthropicApiKey: "test-anthropic-key",
+      },
+    );
+
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+  });
+
+  it("returns Anthropic provider for Claude Opus models", async () => {
+    mockPrisma.modelPricing.findUnique.mockResolvedValue({
+      id: 5,
+      model: "claude-opus-4-0",
+      versionTag: "claude-opus-4-0-20250514",
+      inputPrice: "15.00",
+      cachedInputPrice: "1.50",
+      outputPrice: "75.00",
+      provider: "anthropic",
     });
 
-    expect(provider).toBeNull();
+    const provider = await getProviderForModel("claude-opus-4-0", mockPrisma, {
+      anthropicApiKey: "test-anthropic-key",
+    });
+
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+  });
+
+  it("throws error when Anthropic API key is missing", async () => {
+    mockPrisma.modelPricing.findUnique.mockResolvedValue({
+      id: 4,
+      model: "claude-3-5-sonnet-latest",
+      provider: "anthropic",
+    });
+
+    await expect(
+      getProviderForModel("claude-3-5-sonnet-latest", mockPrisma, {}),
+    ).rejects.toThrow("Anthropic API key not configured");
   });
 
   describe("DatabaseProviderSelector class", () => {

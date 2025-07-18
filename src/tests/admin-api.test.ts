@@ -66,6 +66,15 @@ vi.mock("@prisma/client", () => {
     startDate?: Date;
     endDate?: Date;
   }
+  interface ModelPricing {
+    id: number;
+    model: string;
+    versionTag: string;
+    inputPrice: string;
+    cachedInputPrice: string;
+    outputPrice: string;
+    provider: string;
+  }
   class Collection<T extends { id: number }> {
     rows: T[] = [];
     async create({ data }: { data: Omit<T, "id"> }): Promise<T> {
@@ -73,8 +82,22 @@ vi.mock("@prisma/client", () => {
       this.rows.push(row);
       return row;
     }
-    async findUnique({ where }: { where: { id: number } }): Promise<T | null> {
-      return this.rows.find((r) => r.id === where.id) ?? null;
+    async findUnique({
+      where,
+    }: {
+      where: { id?: number; model?: string };
+    }): Promise<T | null> {
+      if (where.id !== undefined) {
+        return this.rows.find((r) => r.id === where.id) ?? null;
+      }
+      if (where.model !== undefined) {
+        return (
+          this.rows.find(
+            (r) => (r as T & { model?: string }).model === where.model,
+          ) ?? null
+        );
+      }
+      return null;
     }
     async findMany({ where }: { where?: Partial<T> } = {}): Promise<T[]> {
       if (!where) return [...this.rows];
@@ -120,6 +143,7 @@ vi.mock("@prisma/client", () => {
     tenant = new Collection<Tenant>();
     apiKey = new Collection<ApiKey>();
     budget = new Collection<Budget>();
+    modelPricing = new Collection<ModelPricing>();
     auditLog = new Collection<{
       id: number;
       tenantId: number;
@@ -127,6 +151,20 @@ vi.mock("@prisma/client", () => {
       event: string;
       details: string;
     }>();
+
+    constructor() {
+      // Pre-seed with gpt-4o-mini model for tests
+      this.modelPricing.rows.push({
+        id: 1,
+        model: "gpt-4o-mini",
+        versionTag: "gpt-4o-mini-2024-07-18",
+        inputPrice: "0.15",
+        cachedInputPrice: "0.075",
+        outputPrice: "0.60",
+        provider: "openai",
+      });
+    }
+
     async $connect() {}
     async $disconnect() {}
   }
@@ -318,7 +356,7 @@ describe("admin endpoints", () => {
       method: "POST",
       url: "/v1/responses",
       headers: { "x-api-key": key },
-      payload: { model: "gpt-3.5-turbo", input: "hi" },
+      payload: { model: "gpt-4o-mini", input: "hi" },
     });
     console.log("Completion response status:", res.statusCode);
     console.log("Completion response body:", res.body);
@@ -335,7 +373,7 @@ describe("admin endpoints", () => {
       method: "POST",
       url: "/v1/responses",
       headers: { "x-api-key": key },
-      payload: { model: "gpt-3.5-turbo", input: "hi" },
+      payload: { model: "gpt-4o-mini", input: "hi" },
     });
 
     expect(res.statusCode).toBe(401);
