@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { getProviderForModel } from "../provider-selector.js";
 import { OpenAIProvider } from "../providers/openai.js";
 import { AnthropicProvider } from "../providers/anthropic.js";
+import { GoogleProvider } from "../providers/google.js";
 
 describe("Provider Integration Tests", () => {
   it("verifies OpenAI models route to OpenAI provider", async () => {
@@ -89,6 +90,60 @@ describe("Provider Integration Tests", () => {
       );
 
       expect(claudeOpusProvider).toBeInstanceOf(AnthropicProvider);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+  it("verifies Google Gemini models route to Google provider", async () => {
+    const prisma = new PrismaClient();
+
+    try {
+      await prisma.$connect();
+
+      // Test Gemini 2.0 Flash model
+      const gemini20FlashProvider = await getProviderForModel(
+        "gemini-2.0-flash",
+        prisma,
+        {
+          googleApiKey: "test-google-key",
+        },
+      );
+
+      expect(gemini20FlashProvider).toBeInstanceOf(GoogleProvider);
+
+      // Test Gemini 2.5 Flash model
+      const gemini25FlashProvider = await getProviderForModel(
+        "gemini-2.5-flash",
+        prisma,
+        {
+          googleApiKey: "test-google-key",
+        },
+      );
+
+      expect(gemini25FlashProvider).toBeInstanceOf(GoogleProvider);
+
+      // Test Gemini 2.5 Pro Low model
+      const gemini25ProLowProvider = await getProviderForModel(
+        "gemini-2.5-pro-low",
+        prisma,
+        {
+          googleApiKey: "test-google-key",
+        },
+      );
+
+      expect(gemini25ProLowProvider).toBeInstanceOf(GoogleProvider);
+
+      // Test Gemini 2.5 Pro High model
+      const gemini25ProHighProvider = await getProviderForModel(
+        "gemini-2.5-pro-high",
+        prisma,
+        {
+          googleApiKey: "test-google-key",
+        },
+      );
+
+      expect(gemini25ProHighProvider).toBeInstanceOf(GoogleProvider);
     } finally {
       await prisma.$disconnect();
     }

@@ -6,6 +6,7 @@ import {
 } from "../provider-selector.js";
 import { OpenAIProvider } from "../providers/openai.js";
 import { AnthropicProvider } from "../providers/anthropic.js";
+import { GoogleProvider } from "../providers/google.js";
 
 vi.mock("@prisma/client", () => {
   class MockPrisma {
@@ -171,6 +172,58 @@ describe("Provider Selection Logic", () => {
     await expect(
       getProviderForModel("claude-3-5-sonnet-latest", mockPrisma, {}),
     ).rejects.toThrow("Anthropic API key not configured");
+  });
+
+  it("returns Google provider for Gemini models", async () => {
+    mockPrisma.modelPricing.findUnique.mockResolvedValue({
+      id: 6,
+      model: "gemini-2.0-flash",
+      versionTag: "gemini-2.0-flash",
+      inputPrice: "0.10",
+      cachedInputPrice: "0.025",
+      outputPrice: "0.40",
+      provider: "google",
+    });
+
+    const provider = await getProviderForModel("gemini-2.0-flash", mockPrisma, {
+      googleApiKey: "test-google-key",
+    });
+
+    expect(provider).toBeInstanceOf(GoogleProvider);
+  });
+
+  it("returns Google provider for Gemini 2.5 Pro models", async () => {
+    mockPrisma.modelPricing.findUnique.mockResolvedValue({
+      id: 7,
+      model: "gemini-2.5-pro-low",
+      versionTag: "gemini-2.5-pro-low",
+      inputPrice: "1.25",
+      cachedInputPrice: "0.31",
+      outputPrice: "10.00",
+      provider: "google",
+    });
+
+    const provider = await getProviderForModel(
+      "gemini-2.5-pro-low",
+      mockPrisma,
+      {
+        googleApiKey: "test-google-key",
+      },
+    );
+
+    expect(provider).toBeInstanceOf(GoogleProvider);
+  });
+
+  it("throws error when Google API key is missing", async () => {
+    mockPrisma.modelPricing.findUnique.mockResolvedValue({
+      id: 6,
+      model: "gemini-2.0-flash",
+      provider: "google",
+    });
+
+    await expect(
+      getProviderForModel("gemini-2.0-flash", mockPrisma, {}),
+    ).rejects.toThrow("Google API key not configured");
   });
 
   describe("DatabaseProviderSelector class", () => {

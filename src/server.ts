@@ -415,6 +415,9 @@ export async function buildServer() {
         anthropicApiKey:
           (req.headers["x-anthropic-key"] as string) ||
           process.env.ANTHROPIC_API_KEY,
+        googleApiKey:
+          (req.headers["x-google-api-key"] as string) ||
+          process.env.GOOGLE_API_KEY,
       });
 
       if (!provider) {
@@ -595,6 +598,9 @@ export async function buildServer() {
         anthropicApiKey:
           (req.headers["x-anthropic-key"] as string) ||
           process.env.ANTHROPIC_API_KEY,
+        googleApiKey:
+          (req.headers["x-google-api-key"] as string) ||
+          process.env.GOOGLE_API_KEY,
       });
 
       if (!provider) {
