@@ -1,30 +1,33 @@
-export interface CountInput {
+import { encoding_for_model, get_encoding, TiktokenModel } from "tiktoken";
+import { PrismaClient } from "@prisma/client";
+
+export interface TokenCountInput {
   model: string;
   prompt: string | Array<{ role: string; content: string; name?: string }>;
   completion?: string;
 }
 
-export interface CountResult {
+export interface TokenCountResult {
   promptTokens: number;
   completionTokens: number;
   usd: number;
 }
 
-import { encoding_for_model, TiktokenModel } from "tiktoken";
-import { PrismaClient } from "@prisma/client";
-
 // Fallback pricing for unknown models (gpt-3.5-turbo equivalent)
-const FALLBACK_PRICING = { prompt: 0.001, completion: 0.002 };
+// Prices are in USD per 1 million tokens
+const FALLBACK_PRICING = { prompt: 1, completion: 2 };
 
 export async function countTokensAndCost(
-  input: CountInput,
+  input: TokenCountInput,
   prisma: PrismaClient,
-): Promise<CountResult> {
+): Promise<TokenCountResult> {
   let enc: ReturnType<typeof encoding_for_model>;
   try {
+    // Use string model name directly, cast as TiktokenModel
     enc = encoding_for_model(input.model as TiktokenModel);
   } catch {
-    enc = encoding_for_model("gpt-3.5-turbo" as TiktokenModel);
+    // If encoding_for_model fails, fallback to cl100k_base encoding
+    enc = get_encoding("cl100k_base");
   }
   let promptTokens = 0;
   let completionTokens = 0;
@@ -69,8 +72,8 @@ export async function countTokensAndCost(
   }
 
   const usd =
-    (promptTokens * price.prompt) / 1000 +
-    (completionTokens * price.completion) / 1000;
+    (promptTokens * price.prompt) / 1000000 +
+    (completionTokens * price.completion) / 1000000;
   enc.free();
   return { promptTokens, completionTokens, usd };
 }

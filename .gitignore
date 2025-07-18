@@ -4,3 +4,4 @@ node_modules/
 
 src/policy/opa_policy.wasm
 CLAUDE.md
+*.log

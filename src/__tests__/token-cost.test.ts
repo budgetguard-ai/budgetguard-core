@@ -13,8 +13,8 @@ describe("token + cost", () => {
   it("calculates gpt-3.5 completion cost", async () => {
     // Mock database response for gpt-3.5-turbo
     mockPrisma.modelPricing.findUnique.mockResolvedValue({
-      inputPrice: "0.001",
-      outputPrice: "0.002",
+      inputPrice: "1",
+      outputPrice: "2",
     });
 
     const res = await countTokensAndCost(
@@ -27,14 +27,14 @@ describe("token + cost", () => {
     );
     expect(res.promptTokens).toBe(1);
     expect(res.completionTokens).toBe(1);
-    expect(res.usd).toBeCloseTo((1 * 0.001 + 1 * 0.002) / 1000, 6);
+    expect(res.usd).toBeCloseTo((1 * 1 + 1 * 2) / 1000000, 6);
   });
 
   it("calculates gpt-4 chat cost", async () => {
     // Mock database response for gpt-4
     mockPrisma.modelPricing.findUnique.mockResolvedValue({
-      inputPrice: "0.03",
-      outputPrice: "0.06",
+      inputPrice: "30",
+      outputPrice: "60",
     });
 
     const res = await countTokensAndCost(
@@ -50,15 +50,15 @@ describe("token + cost", () => {
     );
     // prompt tokens: (4 + 1 + 1) * 2 + 2 = 14
     expect(res.promptTokens).toBe(14);
-    const expected = (14 * 0.03 + 1 * 0.06) / 1000;
+    const expected = (14 * 30 + 1 * 60) / 1000000;
     expect(res.usd).toBeCloseTo(expected, 6);
   });
 
   it("handles empty prompt", async () => {
     // Mock database response for gpt-3.5-turbo
     mockPrisma.modelPricing.findUnique.mockResolvedValue({
-      inputPrice: "0.001",
-      outputPrice: "0.002",
+      inputPrice: "1",
+      outputPrice: "2",
     });
 
     const res = await countTokensAndCost(
@@ -79,7 +79,7 @@ describe("token + cost", () => {
     );
     expect(res.promptTokens).toBe(1);
     // uses fallback pricing (gpt-3.5 equivalent)
-    expect(res.usd).toBeCloseTo(0.001 / 1000, 6);
+    expect(res.usd).toBeCloseTo(1 / 1000000, 6);
   });
 
   it("handles database errors gracefully", async () => {
@@ -94,6 +94,6 @@ describe("token + cost", () => {
     );
     expect(res.promptTokens).toBe(1);
     // uses fallback pricing when database fails
-    expect(res.usd).toBeCloseTo(0.001 / 1000, 6);
+    expect(res.usd).toBeCloseTo(1 / 1000000, 6);
   });
 });
