@@ -81,7 +81,7 @@ export class AnthropicProvider implements Provider {
 
     const anthropicRequest: AnthropicRequest = {
       model: request.model,
-      max_tokens: requestWithMaxTokens.max_tokens || 4096,
+      max_tokens: requestWithMaxTokens.max_tokens || DEFAULT_MAX_TOKENS,
       messages,
     };
 
