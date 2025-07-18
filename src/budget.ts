@@ -52,11 +52,11 @@ export async function readBudget({
     const fromDb = await prisma.budget.findFirst({
       where: { tenantId: tenantRecord.id, period },
     });
-    if (fromDb) {
+    if (fromDb && fromDb.startDate !== null && fromDb.endDate !== null) {
       const data: BudgetData = {
         amount: parseFloat(fromDb.amountUsd.toString()),
-        startDate: fromDb.startDate ?? new Date(),
-        endDate: fromDb.endDate ?? new Date(),
+        startDate: fromDb.startDate,
+        endDate: fromDb.endDate,
       };
       if (redis) await redis.setEx(key, 3600, serialize(data)); // 1 hour TTL
       return data;
