@@ -178,8 +178,9 @@ export class AnthropicProvider implements Provider {
     }
 
     if (!this.isValidAnthropicResponse(json)) {
+      const responsePreview = JSON.stringify(json).slice(0, 500);
       throw new Error(
-        `Invalid response structure from Anthropic API: ${typeof json}`,
+        `Invalid response structure from Anthropic API: ${responsePreview}`,
       );
     }
 
