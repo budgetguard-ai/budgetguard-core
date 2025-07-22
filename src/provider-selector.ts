@@ -2,8 +2,9 @@ import type { PrismaClient } from "@prisma/client";
 import type { Provider } from "./providers/base.js";
 import { OpenAIProvider } from "./providers/openai.js";
 import { AnthropicProvider } from "./providers/anthropic.js";
+import { GoogleProvider } from "./providers/google.js";
 
-export type ProviderType = "openai" | "anthropic";
+export type ProviderType = "openai" | "anthropic" | "google";
 
 export interface ProviderSelector {
   getProviderForModel(model: string): Promise<Provider | null>;
@@ -15,6 +16,7 @@ export class DatabaseProviderSelector implements ProviderSelector {
     private config: {
       openaiApiKey?: string;
       anthropicApiKey?: string;
+      googleApiKey?: string;
     },
   ) {}
 
@@ -38,6 +40,11 @@ export class DatabaseProviderSelector implements ProviderSelector {
           throw new Error("Anthropic API key not configured");
         }
         return new AnthropicProvider({ apiKey: this.config.anthropicApiKey });
+      case "google":
+        if (!this.config.googleApiKey) {
+          throw new Error("Google API key not configured");
+        }
+        return new GoogleProvider({ apiKey: this.config.googleApiKey });
       default:
         return null;
     }
@@ -47,7 +54,11 @@ export class DatabaseProviderSelector implements ProviderSelector {
 export function getProviderForModel(
   model: string,
   prisma: PrismaClient,
-  config: { openaiApiKey?: string; anthropicApiKey?: string },
+  config: {
+    openaiApiKey?: string;
+    anthropicApiKey?: string;
+    googleApiKey?: string;
+  },
 ): Promise<Provider | null> {
   const selector = new DatabaseProviderSelector(prisma, config);
   return selector.getProviderForModel(model);

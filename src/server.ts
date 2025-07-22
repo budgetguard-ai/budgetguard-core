@@ -136,10 +136,31 @@ export async function buildServer() {
           : undefined);
 
       let completion: string | undefined = undefined;
+      let actualUsage:
+        | {
+            promptTokens: number;
+            completionTokens: number;
+            totalTokens: number;
+          }
+        | undefined = undefined;
+
       if (typeof resp === "object" && resp !== null && "choices" in resp) {
         const choices = (resp as OpenAIResponse).choices ?? [];
         if (choices.length > 0) {
           completion = choices[0]?.text ?? choices[0]?.message?.content;
+        }
+      }
+
+      // Extract provider-reported usage tokens if available
+      if (typeof resp === "object" && resp !== null && "usage" in resp) {
+        const usage = (resp as { usage: unknown }).usage;
+        if (usage && typeof usage === "object" && usage !== null) {
+          const usageObj = usage as Record<string, unknown>;
+          actualUsage = {
+            promptTokens: Number(usageObj.prompt_tokens) || 0,
+            completionTokens: Number(usageObj.completion_tokens) || 0,
+            totalTokens: Number(usageObj.total_tokens) || 0,
+          };
         }
       }
 
@@ -158,6 +179,7 @@ export async function buildServer() {
                 []) ||
               (body?.input as string),
             completion,
+            actualUsage, // Pass provider-reported usage if available
           },
           prismaClient,
         );
@@ -415,6 +437,9 @@ export async function buildServer() {
         anthropicApiKey:
           (req.headers["x-anthropic-key"] as string) ||
           process.env.ANTHROPIC_API_KEY,
+        googleApiKey:
+          (req.headers["x-google-api-key"] as string) ||
+          process.env.GOOGLE_API_KEY,
       });
 
       if (!provider) {
@@ -595,6 +620,9 @@ export async function buildServer() {
         anthropicApiKey:
           (req.headers["x-anthropic-key"] as string) ||
           process.env.ANTHROPIC_API_KEY,
+        googleApiKey:
+          (req.headers["x-google-api-key"] as string) ||
+          process.env.GOOGLE_API_KEY,
       });
 
       if (!provider) {
