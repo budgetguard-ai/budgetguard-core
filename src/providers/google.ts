@@ -139,7 +139,7 @@ export class GoogleProvider implements Provider {
     originalModel: string,
   ): CompletionResponse {
     const candidate = response.candidates[0];
-    
+
     // Handle missing parts array - Google API sometimes returns content without parts
     let content = "";
     if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {

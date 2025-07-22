@@ -57,7 +57,8 @@ export async function countTokensAndCost(
     promptTokens = input.actualUsage.promptTokens;
     // For completion tokens, use the difference between total and prompt
     // This includes both actual output tokens and thinking tokens (both billed at output rate)
-    completionTokens = input.actualUsage.totalTokens - input.actualUsage.promptTokens;
+    completionTokens =
+      input.actualUsage.totalTokens - input.actualUsage.promptTokens;
   } else {
     // Fallback to tiktoken calculation for providers that don't report usage
     let enc: ReturnType<typeof encoding_for_model>;
@@ -93,6 +94,6 @@ export async function countTokensAndCost(
   const usd =
     (promptTokens * price.prompt) / 1000000 +
     (completionTokens * price.completion) / 1000000;
-    
+
   return { promptTokens, completionTokens, usd };
 }
