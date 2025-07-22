@@ -136,10 +136,24 @@ export async function buildServer() {
           : undefined);
 
       let completion: string | undefined = undefined;
+      let actualUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined = undefined;
+      
       if (typeof resp === "object" && resp !== null && "choices" in resp) {
         const choices = (resp as OpenAIResponse).choices ?? [];
         if (choices.length > 0) {
           completion = choices[0]?.text ?? choices[0]?.message?.content;
+        }
+      }
+
+      // Extract provider-reported usage tokens if available
+      if (typeof resp === "object" && resp !== null && "usage" in resp) {
+        const usage = (resp as any).usage;
+        if (usage && typeof usage === "object") {
+          actualUsage = {
+            promptTokens: usage.prompt_tokens || 0,
+            completionTokens: usage.completion_tokens || 0,
+            totalTokens: usage.total_tokens || 0,
+          };
         }
       }
 
@@ -158,6 +172,7 @@ export async function buildServer() {
                 []) ||
               (body?.input as string),
             completion,
+            actualUsage, // Pass provider-reported usage if available
           },
           prismaClient,
         );

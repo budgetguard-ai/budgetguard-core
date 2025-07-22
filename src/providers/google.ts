@@ -25,6 +25,9 @@ interface GoogleRequest {
     temperature?: number;
     topP?: number;
     stopSequences?: string[];
+    thinkingConfig?: {
+      thinkingBudget?: number;
+    };
   };
 }
 
@@ -94,6 +97,7 @@ export class GoogleProvider implements Provider {
       temperature?: number;
       top_p?: number;
       stop?: string | string[];
+      thinking_budget?: number; // Support for disabling thinking
     };
 
     const generationConfig: GoogleRequest["generationConfig"] = {};
@@ -118,6 +122,13 @@ export class GoogleProvider implements Provider {
         : [requestWithOptionals.stop];
     }
 
+    // Handle thinking configuration
+    if (requestWithOptionals.thinking_budget !== undefined) {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: requestWithOptionals.thinking_budget,
+      };
+    }
+
     googleRequest.generationConfig = generationConfig;
 
     return googleRequest;
@@ -128,8 +139,23 @@ export class GoogleProvider implements Provider {
     originalModel: string,
   ): CompletionResponse {
     const candidate = response.candidates[0];
-    const content =
-      candidate?.content?.parts?.map((part) => part.text).join("") || "";
+    
+    // Handle missing parts array - Google API sometimes returns content without parts
+    let content = "";
+    if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {
+      content = candidate.content.parts.map((part) => part.text).join("") || "";
+    } else {
+      // Sometimes content might be directly in the content object
+      if (candidate?.content && typeof candidate.content === "string") {
+        content = candidate.content;
+      } else {
+        // If we get MAX_TOKENS finish reason with no content, this might be due to
+        // the model hitting token limits while generating "thinking" tokens
+        if (candidate?.finishReason === "MAX_TOKENS") {
+          content = "[Response truncated due to token limit]";
+        }
+      }
+    }
 
     // Handle tiered pricing for gemini-2.5-pro
     let effectiveModel = originalModel;
@@ -150,7 +176,7 @@ export class GoogleProvider implements Provider {
       model: effectiveModel,
       usage: {
         prompt_tokens: response.usageMetadata.promptTokenCount,
-        completion_tokens: response.usageMetadata.candidatesTokenCount,
+        completion_tokens: response.usageMetadata.candidatesTokenCount || 0,
         total_tokens: response.usageMetadata.totalTokenCount,
       },
     };

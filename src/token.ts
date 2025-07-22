@@ -5,6 +5,12 @@ export interface TokenCountInput {
   model: string;
   prompt: string | Array<{ role: string; content: string; name?: string }>;
   completion?: string;
+  // Provider-reported actual usage (takes precedence over tiktoken calculation)
+  actualUsage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 export interface TokenCountResult {
@@ -22,14 +28,6 @@ export async function countTokensAndCost(
   input: TokenCountInput,
   prisma: PrismaClient,
 ): Promise<TokenCountResult> {
-  let enc: ReturnType<typeof encoding_for_model>;
-  try {
-    // Use string model name directly, cast as TiktokenModel
-    enc = encoding_for_model(input.model as TiktokenModel);
-  } catch {
-    // If encoding_for_model fails, fallback to cl100k_base encoding
-    enc = get_encoding(FALLBACK_ENCODING);
-  }
   let promptTokens = 0;
   let completionTokens = 0;
 
@@ -54,27 +52,47 @@ export async function countTokensAndCost(
     console.log(`Using fallback pricing for model ${input.model}`);
   }
 
-  if (typeof input.prompt === "string") {
-    if (input.prompt) {
-      promptTokens = enc.encode(input.prompt).length;
+  // If actual usage is provided by the provider, use it instead of tiktoken
+  if (input.actualUsage) {
+    promptTokens = input.actualUsage.promptTokens;
+    // For completion tokens, use the difference between total and prompt
+    // This includes both actual output tokens and thinking tokens (both billed at output rate)
+    completionTokens = input.actualUsage.totalTokens - input.actualUsage.promptTokens;
+  } else {
+    // Fallback to tiktoken calculation for providers that don't report usage
+    let enc: ReturnType<typeof encoding_for_model>;
+    try {
+      // Use string model name directly, cast as TiktokenModel
+      enc = encoding_for_model(input.model as TiktokenModel);
+    } catch {
+      // If encoding_for_model fails, fallback to cl100k_base encoding
+      enc = get_encoding(FALLBACK_ENCODING);
     }
-  } else if (Array.isArray(input.prompt)) {
-    for (const msg of input.prompt) {
-      promptTokens += 4; // per-message tokens
-      promptTokens += enc.encode(msg.role).length;
-      promptTokens += enc.encode(msg.content).length;
-      if (msg.name) promptTokens += enc.encode(msg.name).length - 1;
-    }
-    promptTokens += 2; // assistant priming
-  }
 
-  if (input.completion) {
-    completionTokens = enc.encode(input.completion).length;
+    if (typeof input.prompt === "string") {
+      if (input.prompt) {
+        promptTokens = enc.encode(input.prompt).length;
+      }
+    } else if (Array.isArray(input.prompt)) {
+      for (const msg of input.prompt) {
+        promptTokens += 4; // per-message tokens
+        promptTokens += enc.encode(msg.role).length;
+        promptTokens += enc.encode(msg.content).length;
+        if (msg.name) promptTokens += enc.encode(msg.name).length - 1;
+      }
+      promptTokens += 2; // assistant priming
+    }
+
+    if (input.completion) {
+      completionTokens = enc.encode(input.completion).length;
+    }
+
+    enc.free();
   }
 
   const usd =
     (promptTokens * price.prompt) / 1000000 +
     (completionTokens * price.completion) / 1000000;
-  enc.free();
+    
   return { promptTokens, completionTokens, usd };
 }
