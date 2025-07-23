@@ -3,6 +3,7 @@ import {
   CompletionRequest,
   CompletionResponse,
   ProviderConfig,
+  ProviderHealthStatus,
 } from "./base.js";
 
 const DEFAULT_MAX_TOKENS = 8192;
@@ -247,5 +248,82 @@ export class GoogleProvider implements Provider {
   }> {
     // Google Gemini uses the same generateContent endpoint for both
     return this.requestEndpoint(request.model, request);
+  }
+
+  async healthCheck(): Promise<ProviderHealthStatus> {
+    const startTime = Date.now();
+    const lastChecked = Date.now();
+
+    try {
+      // Make a minimal request to check API connectivity
+      // Using a simple request with minimal tokens
+      const minimalRequest: GoogleRequest = {
+        contents: [
+          {
+            parts: [{ text: "ping" }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 1,
+        },
+      };
+
+      // Use a lightweight model for health checks
+      const model = "gemini-1.5-flash";
+      const url = `${this.baseUrl}/${model}:generateContent`;
+
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": this.config.apiKey,
+        },
+        body: JSON.stringify(minimalRequest),
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        const errorMessage =
+          typeof errorData === "object" &&
+          errorData !== null &&
+          "error" in errorData
+            ? (errorData as { error?: { message?: string } }).error?.message
+            : undefined;
+        return {
+          healthy: false,
+          responseTime,
+          error: `HTTP ${resp.status}: ${errorMessage || resp.statusText}`,
+          lastChecked,
+        };
+      }
+
+      // Verify the response is valid
+      const data = await resp.json();
+      if (!this.isValidGoogleResponse(data)) {
+        return {
+          healthy: false,
+          responseTime,
+          error: "Invalid response structure from Google API",
+          lastChecked,
+        };
+      }
+
+      return {
+        healthy: true,
+        responseTime,
+        lastChecked,
+      };
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      return {
+        healthy: false,
+        responseTime,
+        error: error instanceof Error ? error.message : "Unknown error",
+        lastChecked,
+      };
+    }
   }
 }

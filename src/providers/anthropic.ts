@@ -3,6 +3,7 @@ import {
   CompletionRequest,
   CompletionResponse,
   ProviderConfig,
+  ProviderHealthStatus,
 } from "./base.js";
 
 const DEFAULT_MAX_TOKENS = 4096; // or whatever default value is appropriate
@@ -208,5 +209,74 @@ export class AnthropicProvider implements Provider {
     // Anthropic doesn't have a separate responses endpoint
     // Route to the same messages endpoint
     return this.requestEndpoint("/v1/messages", request);
+  }
+
+  async healthCheck(): Promise<ProviderHealthStatus> {
+    const startTime = Date.now();
+    const lastChecked = Date.now();
+
+    try {
+      // Make a minimal request to check API connectivity
+      // Anthropic doesn't have a models endpoint, so we'll use a minimal message request
+      const minimalRequest: AnthropicRequest = {
+        model: "claude-3-haiku-20240307", // Use the smallest/fastest model
+        max_tokens: 1,
+        messages: [{ role: "user", content: "ping" }],
+      };
+
+      const resp = await fetch(`${this.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.config.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(minimalRequest),
+        signal: AbortSignal.timeout(10000), // 10 second timeout for actual request
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        const errorMessage =
+          typeof errorData === "object" &&
+          errorData !== null &&
+          "error" in errorData
+            ? (errorData as { error?: { message?: string } }).error?.message
+            : undefined;
+        return {
+          healthy: false,
+          responseTime,
+          error: `HTTP ${resp.status}: ${errorMessage || resp.statusText}`,
+          lastChecked,
+        };
+      }
+
+      // Verify the response is valid
+      const data = await resp.json();
+      if (!this.isValidAnthropicResponse(data)) {
+        return {
+          healthy: false,
+          responseTime,
+          error: "Invalid response structure from Anthropic API",
+          lastChecked,
+        };
+      }
+
+      return {
+        healthy: true,
+        responseTime,
+        lastChecked,
+      };
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      return {
+        healthy: false,
+        responseTime,
+        error: error instanceof Error ? error.message : "Unknown error",
+        lastChecked,
+      };
+    }
   }
 }

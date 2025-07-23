@@ -98,7 +98,7 @@ describe("rate limiting", () => {
     const last = await app.inject({ method: "GET", url: "/health", headers });
     expect(last.statusCode).toBe(429);
     expect(last.json()).toEqual({ error: "Rate limit exceeded" });
-  });
+  }, 20000); // 20 second timeout for this test
 
   it("supports custom limits", async () => {
     const create = await app.inject({

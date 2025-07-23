@@ -8,6 +8,8 @@ export type ProviderType = "openai" | "anthropic" | "google";
 
 export interface ProviderSelector {
   getProviderForModel(model: string): Promise<Provider | null>;
+  getAllConfiguredProviders(): { [key in ProviderType]?: Provider };
+  getProviderByType(providerType: ProviderType): Provider | null;
 }
 
 export class DatabaseProviderSelector implements ProviderSelector {
@@ -43,6 +45,52 @@ export class DatabaseProviderSelector implements ProviderSelector {
       case "google":
         if (!this.config.googleApiKey) {
           throw new Error("Google API key not configured");
+        }
+        return new GoogleProvider({ apiKey: this.config.googleApiKey });
+      default:
+        return null;
+    }
+  }
+
+  getAllConfiguredProviders(): { [key in ProviderType]?: Provider } {
+    const providers: { [key in ProviderType]?: Provider } = {};
+
+    if (this.config.openaiApiKey) {
+      providers.openai = new OpenAIProvider({
+        apiKey: this.config.openaiApiKey,
+      });
+    }
+
+    if (this.config.anthropicApiKey) {
+      providers.anthropic = new AnthropicProvider({
+        apiKey: this.config.anthropicApiKey,
+      });
+    }
+
+    if (this.config.googleApiKey) {
+      providers.google = new GoogleProvider({
+        apiKey: this.config.googleApiKey,
+      });
+    }
+
+    return providers;
+  }
+
+  getProviderByType(providerType: ProviderType): Provider | null {
+    switch (providerType) {
+      case "openai":
+        if (!this.config.openaiApiKey) {
+          return null;
+        }
+        return new OpenAIProvider({ apiKey: this.config.openaiApiKey });
+      case "anthropic":
+        if (!this.config.anthropicApiKey) {
+          return null;
+        }
+        return new AnthropicProvider({ apiKey: this.config.anthropicApiKey });
+      case "google":
+        if (!this.config.googleApiKey) {
+          return null;
         }
         return new GoogleProvider({ apiKey: this.config.googleApiKey });
       default:

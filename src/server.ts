@@ -21,7 +21,11 @@ import { evaluatePolicy } from "./policy/opa.js";
 import { readBudget, writeBudget, deleteBudget } from "./budget.js";
 import { readRateLimit, writeRateLimit } from "./rate-limit.js";
 import type { CompletionRequest } from "./providers/base.js";
-import { getProviderForModel } from "./provider-selector.js";
+import {
+  getProviderForModel,
+  DatabaseProviderSelector,
+  type ProviderType,
+} from "./provider-selector.js";
 
 dotenv.config();
 
@@ -259,13 +263,104 @@ export async function buildServer() {
         response: {
           200: {
             type: "object",
-            properties: { ok: { type: "boolean" } },
+            properties: {
+              ok: { type: "boolean" },
+              dependencies: {
+                type: "object",
+                properties: {
+                  database: { type: "boolean" },
+                  redis: { type: "boolean" },
+                  providers: {
+                    type: "object",
+                    properties: {
+                      configured: { type: "number" },
+                      healthy: { type: "number" },
+                    },
+                  },
+                },
+              },
+            },
             required: ["ok"],
           },
         },
       },
     },
-    async () => ({ ok: true }),
+    async () => {
+      const health = {
+        ok: true,
+        dependencies: {
+          database: false,
+          redis: false,
+          providers: {
+            configured: 0,
+            healthy: 0,
+          },
+        },
+      };
+
+      try {
+        // Check database connectivity
+        const prisma = await getPrisma();
+        await prisma.$queryRaw`SELECT 1`;
+        health.dependencies.database = true;
+      } catch {
+        health.ok = false;
+      }
+
+      try {
+        // Check Redis connectivity (if configured)
+        if (process.env.REDIS_URL) {
+          const redis = createClient({ url: process.env.REDIS_URL });
+          await redis.connect();
+          await redis.ping();
+          await redis.disconnect();
+          health.dependencies.redis = true;
+        } else {
+          health.dependencies.redis = true; // Not required if not configured
+        }
+      } catch {
+        health.ok = false;
+      }
+
+      try {
+        // Check provider status (quick check)
+        const config = {
+          openaiApiKey: process.env.OPENAI_KEY,
+          anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+          googleApiKey: process.env.GOOGLE_API_KEY,
+        };
+
+        const prisma = await getPrisma();
+        const providerSelector = new DatabaseProviderSelector(prisma, config);
+        const providers = providerSelector.getAllConfiguredProviders();
+
+        health.dependencies.providers.configured =
+          Object.keys(providers).length;
+
+        // Quick concurrent health checks (with timeout)
+        const healthChecks = await Promise.allSettled(
+          Object.values(providers).map(async (provider) => {
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Health check timeout")), 3000),
+            );
+            return Promise.race([provider.healthCheck(), timeoutPromise]);
+          }),
+        );
+
+        health.dependencies.providers.healthy = healthChecks.filter(
+          (result) =>
+            result.status === "fulfilled" &&
+            typeof result.value === "object" &&
+            result.value !== null &&
+            "healthy" in result.value &&
+            (result.value as { healthy: boolean }).healthy,
+        ).length;
+      } catch {
+        // Provider checks are not critical for overall health
+      }
+
+      return health;
+    },
   );
 
   // proxy OpenAI chat completions endpoint
@@ -1580,6 +1675,342 @@ export async function buildServer() {
         return reply.send(updated);
       } catch {
         return reply.code(404).send({ error: "Model pricing not found" });
+      }
+    },
+  );
+
+  // Provider status endpoints
+  app.get(
+    "/admin/providers/status",
+    {
+      preHandler: adminAuth,
+      schema: {
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              providers: {
+                type: "object",
+                properties: {
+                  openai: {
+                    type: "object",
+                    properties: {
+                      configured: { type: "boolean" },
+                      healthy: { type: "boolean" },
+                      responseTime: { type: "number" },
+                      error: { type: "string" },
+                      lastChecked: { type: "number" },
+                    },
+                  },
+                  anthropic: {
+                    type: "object",
+                    properties: {
+                      configured: { type: "boolean" },
+                      healthy: { type: "boolean" },
+                      responseTime: { type: "number" },
+                      error: { type: "string" },
+                      lastChecked: { type: "number" },
+                    },
+                  },
+                  google: {
+                    type: "object",
+                    properties: {
+                      configured: { type: "boolean" },
+                      healthy: { type: "boolean" },
+                      responseTime: { type: "number" },
+                      error: { type: "string" },
+                      lastChecked: { type: "number" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      try {
+        const config = {
+          openaiApiKey:
+            (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY,
+          anthropicApiKey:
+            (req.headers["x-anthropic-key"] as string) ||
+            process.env.ANTHROPIC_API_KEY,
+          googleApiKey:
+            (req.headers["x-google-api-key"] as string) ||
+            process.env.GOOGLE_API_KEY,
+        };
+
+        const prisma = await getPrisma();
+        const providerSelector = new DatabaseProviderSelector(prisma, config);
+        const providers = providerSelector.getAllConfiguredProviders();
+
+        const status: {
+          providers: Record<
+            string,
+            {
+              configured: boolean;
+              healthy: boolean;
+              responseTime?: number;
+              error?: string;
+              lastChecked: number;
+            }
+          >;
+        } = {
+          providers: {},
+        };
+
+        // Check each provider type
+        for (const providerType of [
+          "openai",
+          "anthropic",
+          "google",
+        ] as ProviderType[]) {
+          const provider = providers[providerType];
+          const configured = provider !== undefined;
+
+          if (configured && provider) {
+            try {
+              const health = await provider.healthCheck();
+              status.providers[providerType] = {
+                configured: true,
+                ...health,
+              };
+            } catch (error) {
+              status.providers[providerType] = {
+                configured: true,
+                healthy: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+                lastChecked: Date.now(),
+              };
+            }
+          } else {
+            status.providers[providerType] = {
+              configured: false,
+              healthy: false,
+              error: "Provider not configured",
+              lastChecked: Date.now(),
+            };
+          }
+        }
+
+        return reply.send(status);
+      } catch (error) {
+        return reply.code(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to check provider status",
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/providers/:provider/health",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            provider: {
+              type: "string",
+              enum: ["openai", "anthropic", "google"],
+            },
+          },
+          required: ["provider"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              provider: { type: "string" },
+              configured: { type: "boolean" },
+              healthy: { type: "boolean" },
+              responseTime: { type: "number" },
+              error: { type: "string" },
+              lastChecked: { type: "number" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      try {
+        const { provider: providerType } = req.params as {
+          provider: ProviderType;
+        };
+
+        const config = {
+          openaiApiKey:
+            (req.headers["x-openai-key"] as string) || process.env.OPENAI_KEY,
+          anthropicApiKey:
+            (req.headers["x-anthropic-key"] as string) ||
+            process.env.ANTHROPIC_API_KEY,
+          googleApiKey:
+            (req.headers["x-google-api-key"] as string) ||
+            process.env.GOOGLE_API_KEY,
+        };
+
+        const prisma = await getPrisma();
+        const providerSelector = new DatabaseProviderSelector(prisma, config);
+        const provider = providerSelector.getProviderByType(providerType);
+
+        if (!provider) {
+          return reply.send({
+            provider: providerType,
+            configured: false,
+            healthy: false,
+            error: "Provider not configured",
+            lastChecked: Date.now(),
+          });
+        }
+
+        try {
+          const health = await provider.healthCheck();
+          return reply.send({
+            provider: providerType,
+            configured: true,
+            ...health,
+          });
+        } catch (error) {
+          return reply.send({
+            provider: providerType,
+            configured: true,
+            healthy: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+            lastChecked: Date.now(),
+          });
+        }
+      } catch (error) {
+        return reply.code(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to check provider health",
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/admin/providers/:provider/test",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            provider: {
+              type: "string",
+              enum: ["openai", "anthropic", "google"],
+            },
+          },
+          required: ["provider"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            apiKey: { type: "string" },
+          },
+          required: ["apiKey"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              provider: { type: "string" },
+              healthy: { type: "boolean" },
+              responseTime: { type: "number" },
+              error: { type: "string" },
+              lastChecked: { type: "number" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      try {
+        const { provider: providerType } = req.params as {
+          provider: ProviderType;
+        };
+        const { apiKey } = req.body as { apiKey: string };
+
+        // Create a temporary provider instance with the provided API key
+        let provider;
+        switch (providerType) {
+          case "openai": {
+            const { OpenAIProvider } = await import("./providers/openai.js");
+            provider = new OpenAIProvider({ apiKey });
+            break;
+          }
+          case "anthropic": {
+            const { AnthropicProvider } = await import(
+              "./providers/anthropic.js"
+            );
+            provider = new AnthropicProvider({ apiKey });
+            break;
+          }
+          case "google": {
+            const { GoogleProvider } = await import("./providers/google.js");
+            provider = new GoogleProvider({ apiKey });
+            break;
+          }
+          default:
+            return reply.code(400).send({ error: "Invalid provider type" });
+        }
+
+        try {
+          const health = await provider.healthCheck();
+          return reply.send({
+            provider: providerType,
+            ...health,
+          });
+        } catch (error) {
+          return reply.send({
+            provider: providerType,
+            healthy: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+            lastChecked: Date.now(),
+          });
+        }
+      } catch (error) {
+        return reply.code(500).send({
+          error:
+            error instanceof Error ? error.message : "Failed to test provider",
+        });
       }
     },
   );
