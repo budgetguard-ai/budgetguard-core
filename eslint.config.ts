@@ -7,12 +7,13 @@ const compat = new FlatCompat();
 
 export default [
   {
-    ignores: ['node_modules', 'dist', 'build', 'coverage'],
+    ignores: ['node_modules', 'dist', 'build', 'coverage', 'src/dashboard/dist'],
   },
   eslintJs.configs.recommended,
   ...compat.config({
     ignorePatterns: [
       "dist/**",
+      "src/dashboard/dist/**",
       "node_modules/**",
       "eslint.config.ts",
       "vitest.config.ts",

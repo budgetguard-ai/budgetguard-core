@@ -2,6 +2,11 @@ node_modules/
 /dist/
 .env
 
+# Dashboard build artifacts
+src/dashboard/dist/
+src/dashboard/node_modules/
+
 src/policy/opa_policy.wasm
 CLAUDE.md
 *.log
+dist/server.js
