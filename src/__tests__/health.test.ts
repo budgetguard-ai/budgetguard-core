@@ -24,7 +24,11 @@ vi.mock("@prisma/client", () => {
   class FakePrisma {
     async $connect() {}
     async $disconnect() {}
+    async $queryRaw() {
+      return [{ "1": 1 }];
+    }
     tenant = { findFirst: async () => null };
+    modelPricing = { findUnique: async () => null };
   }
   return { PrismaClient: FakePrisma };
 });
@@ -41,10 +45,21 @@ afterAll(async () => {
 });
 
 describe("GET /health", () => {
-  it("returns ok true", async () => {
+  it("returns health status with dependencies", async () => {
     const res = await app.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true });
+    const body = res.json();
+    expect(body).toMatchObject({
+      ok: expect.any(Boolean),
+      dependencies: {
+        database: expect.any(Boolean),
+        redis: expect.any(Boolean),
+        providers: {
+          configured: expect.any(Number),
+          healthy: expect.any(Number),
+        },
+      },
+    });
   });
 
   it("serves docs", async () => {

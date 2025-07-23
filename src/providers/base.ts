@@ -21,6 +21,13 @@ export interface ProviderConfig {
   baseUrl?: string;
 }
 
+export interface ProviderHealthStatus {
+  healthy: boolean;
+  responseTime?: number;
+  error?: string;
+  lastChecked: number;
+}
+
 export interface Provider {
   chatCompletion(request: CompletionRequest): Promise<{
     status: number;
@@ -31,4 +38,6 @@ export interface Provider {
     status: number;
     data: CompletionResponse;
   }>;
+
+  healthCheck(): Promise<ProviderHealthStatus>;
 }
