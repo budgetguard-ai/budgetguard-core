@@ -41,35 +41,60 @@ export async function readBudget({
   defaultBudget,
 }: BudgetOptions): Promise<BudgetData> {
   const key = `budget:${tenant}:${period}`;
+
+  // First, check Redis cache
   if (redis) {
     const hit = await redis.get(key);
     if (hit) return deserialize(hit);
   }
+
+  // For recurring budgets (daily/monthly), check if we have a budget configured
   const tenantRecord = await prisma.tenant.findFirst({
     where: { name: tenant },
   });
+
+  let budgetAmount = defaultBudget;
+  let hasBudgetConfig = false;
+
   if (tenantRecord) {
     const fromDb = await prisma.budget.findFirst({
       where: { tenantId: tenantRecord.id, period },
     });
-    if (fromDb && fromDb.startDate !== null && fromDb.endDate !== null) {
-      const data: BudgetData = {
-        amount: parseFloat(fromDb.amountUsd.toString()),
-        startDate: fromDb.startDate,
-        endDate: fromDb.endDate,
-      };
-      if (redis) await redis.setEx(key, 3600, serialize(data)); // 1 hour TTL
-      return data;
+
+    if (fromDb) {
+      budgetAmount = parseFloat(fromDb.amountUsd.toString());
+      hasBudgetConfig = true;
+
+      // For custom budgets, use the exact dates from database
+      if (
+        period === "custom" &&
+        fromDb.startDate !== null &&
+        fromDb.endDate !== null
+      ) {
+        const data: BudgetData = {
+          amount: budgetAmount,
+          startDate: fromDb.startDate,
+          endDate: fromDb.endDate,
+        };
+        if (redis) await redis.setEx(key, 3600, serialize(data));
+        return data;
+      }
     }
   }
 
-  const amountEnv =
-    process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
-    process.env[`BUDGET_${period.toUpperCase()}_USD`];
-  const amount = amountEnv ? Number(amountEnv) : defaultBudget;
+  // Only use environment variable if no budget was configured in DB
+  if (!hasBudgetConfig) {
+    const amountEnv =
+      process.env[`BUDGET_${period.toUpperCase()}_${tenant.toUpperCase()}`] ??
+      process.env[`BUDGET_${period.toUpperCase()}_USD`];
+    if (amountEnv) budgetAmount = Number(amountEnv);
+  }
+
   const now = new Date();
   let startDate: Date;
   let endDate: Date;
+
+  // For daily and monthly budgets, always calculate current period (recurring behavior)
   if (period === "monthly") {
     startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     endDate = new Date(
@@ -81,6 +106,7 @@ export async function readBudget({
     );
     endDate = new Date(startDate.getTime() + 86400000 - 1);
   } else {
+    // Custom budget fallback (should not reach here if custom budget exists in DB)
     const s = process.env.BUDGET_START_DATE;
     const e = process.env.BUDGET_END_DATE;
     if (!s || !e) {
@@ -90,8 +116,13 @@ export async function readBudget({
     endDate = new Date(e);
     endDate.setUTCHours(23, 59, 59, 999);
   }
-  const data: BudgetData = { amount, startDate, endDate };
-  if (redis) await redis.setEx(key, 3600, serialize(data)); // 1 hour TTL
+
+  const data: BudgetData = { amount: budgetAmount, startDate, endDate };
+
+  // Cache with shorter TTL for recurring budgets to ensure they refresh at period boundaries
+  const cacheTTL =
+    period === "daily" ? 300 : period === "monthly" ? 1800 : 3600; // 5min, 30min, 1hr
+  if (redis) await redis.setEx(key, cacheTTL, serialize(data));
   return data;
 }
 

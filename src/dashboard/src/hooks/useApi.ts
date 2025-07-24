@@ -175,8 +175,17 @@ export const useUpdateBudget = () => {
       budgetId: number;
       data: Partial<Budget>;
     }) => apiClient.updateBudget(budgetId, data),
-    onSuccess: () => {
+    onSuccess: (updatedBudget) => {
+      // Invalidate tenants list to refresh budget info on main page
       void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+      // Invalidate specific tenant budgets to refresh dialog
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenantBudgets(updatedBudget.tenantId),
+      });
+      // Invalidate usage data as budget changes might affect usage display
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenantUsage(updatedBudget.tenantId),
+      });
     },
   });
 };
@@ -187,7 +196,25 @@ export const useDeleteBudget = () => {
   return useMutation({
     mutationFn: (budgetId: number) => apiClient.deleteBudget(budgetId),
     onSuccess: () => {
+      // Invalidate tenants list to refresh budget info on main page
       void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+      // Invalidate all tenant budgets since we don't have tenantId in response
+      // This is broader than needed but ensures consistency
+      void queryClient.invalidateQueries({
+        predicate: (query) => {
+          return (
+            query.queryKey[0] === "tenant" && query.queryKey[2] === "budgets"
+          );
+        },
+      });
+      // Also invalidate usage data
+      void queryClient.invalidateQueries({
+        predicate: (query) => {
+          return (
+            query.queryKey[0] === "tenant" && query.queryKey[2] === "usage"
+          );
+        },
+      });
     },
   });
 };

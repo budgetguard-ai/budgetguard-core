@@ -453,14 +453,14 @@ describe("admin endpoints", () => {
     expect(await redis.get(rateLimitKey)).toBeNull();
     expect(await redis.get(usageLedgerKey)).toBeNull();
 
-    // Verify related data is deleted (should return empty arrays now)
+    // Verify related data is deleted (should return 404 since tenant no longer exists)
     const budgetsRes = await app.inject({
       method: "GET",
       url: `/admin/tenant/${tenant.id}/budgets`,
       headers: { "x-admin-key": "adminkey" },
     });
-    expect(budgetsRes.statusCode).toBe(200);
-    expect(budgetsRes.json()).toEqual([]); // Empty array since tenant data was deleted
+    expect(budgetsRes.statusCode).toBe(404); // Tenant no longer exists
+    expect(budgetsRes.json()).toEqual({ error: "Tenant not found" });
 
     const apiKeysRes = await app.inject({
       method: "GET",

@@ -272,7 +272,8 @@ describe("budget enforcement", () => {
       payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
+    // For recurring budgets, the cached amount should match the configured budget
     const cached = JSON.parse((await redis.get("budget:t1:daily"))!);
-    expect(cached.amount).toBe(0.00003);
+    expect(cached.amount).toBe(0.00003); // Budget amount from DB
   });
 });
