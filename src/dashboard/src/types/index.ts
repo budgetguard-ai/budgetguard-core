@@ -88,6 +88,11 @@ export interface CreateTenantRequest {
   name: string;
 }
 
+export interface UpdateTenantRequest {
+  name?: string;
+  rateLimitPerMin?: number | null;
+}
+
 export interface UpdateRateLimitRequest {
   rateLimitPerMin: number | null;
 }

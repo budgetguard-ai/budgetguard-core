@@ -5,6 +5,7 @@ import type {
   ModelPricing,
   HealthResponse,
   CreateTenantRequest,
+  UpdateTenantRequest,
   UpdateRateLimitRequest,
   CreateBudgetRequest,
   CreateModelPricingRequest,
@@ -72,6 +73,19 @@ class ApiClient {
     return this.request<Tenant>("/admin/tenant", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateTenant(id: number, data: UpdateTenantRequest): Promise<Tenant> {
+    return this.request<Tenant>(`/admin/tenant/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTenant(id: number): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(`/admin/tenant/${id}`, {
+      method: "DELETE",
     });
   }
 

@@ -3,6 +3,7 @@ import { apiClient } from "../services/api";
 import type {
   Budget,
   CreateTenantRequest,
+  UpdateTenantRequest,
   UpdateRateLimitRequest,
   CreateBudgetRequest,
   CreateModelPricingRequest,
@@ -53,6 +54,53 @@ export const useCreateTenant = () => {
     mutationFn: (data: CreateTenantRequest) => apiClient.createTenant(data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+    },
+  });
+};
+
+export const useUpdateTenant = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: UpdateTenantRequest }) =>
+      apiClient.updateTenant(id, data),
+    onSuccess: (updatedTenant) => {
+      // Invalidate the tenants list
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+      // Update the specific tenant cache
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenant(updatedTenant.id),
+      });
+      // If rate limit was updated, invalidate rate limit cache
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenantRateLimit(updatedTenant.id),
+      });
+    },
+  });
+};
+
+export const useDeleteTenant = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: number) => apiClient.deleteTenant(id),
+    onSuccess: (_, deletedId) => {
+      // Invalidate the tenants list
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+      // Remove all cached data for the deleted tenant
+      void queryClient.removeQueries({ queryKey: queryKeys.tenant(deletedId) });
+      void queryClient.removeQueries({
+        queryKey: queryKeys.tenantRateLimit(deletedId),
+      });
+      void queryClient.removeQueries({
+        queryKey: queryKeys.tenantBudgets(deletedId),
+      });
+      void queryClient.removeQueries({
+        queryKey: queryKeys.tenantUsage(deletedId),
+      });
+      void queryClient.removeQueries({
+        queryKey: queryKeys.tenantApiKeys(deletedId),
+      });
     },
   });
 };
