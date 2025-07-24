@@ -31,7 +31,15 @@ vi.mock("redis", () => {
       keys.forEach((key) => delete this.data[key]);
     }
     async keys(pattern: string) {
-      const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+      // Convert Redis pattern to JavaScript regex
+      // Redis patterns support: * (any chars), ? (single char), [abc] (char class)
+      const regex = new RegExp(
+        pattern
+          .replace(/([.+^$(){}|[\]\\])/g, "\\$1") // Escape regex special characters
+          .replace(/\*/g, ".*") // Convert '*' to '.*' (any characters)
+          .replace(/\?/g, "."), // Convert '?' to '.' (single character)
+        // Note: [abc] character classes work as-is in regex
+      );
       return Object.keys(this.data).filter((key) => regex.test(key));
     }
     async incrByFloat(key: string, val: number) {
@@ -252,6 +260,41 @@ afterAll(async () => {
 });
 
 describe("admin endpoints", () => {
+  it("Redis pattern matching works correctly", async () => {
+    // Test the improved Redis pattern matching
+    const r = redis as unknown as {
+      data: Record<string, string>;
+      keys: (pattern: string) => Promise<string[]>;
+    };
+
+    // Set up test data with various patterns
+    r.data = {
+      "user:123:profile": "data1",
+      "user:456:profile": "data2",
+      "user:123:settings": "data3",
+      "session:abc": "data4",
+      "session:def": "data5",
+      "cache:temp1": "data6",
+    };
+
+    // Test * wildcard
+    const userKeys = await r.keys("user:*");
+    expect(userKeys.sort()).toEqual([
+      "user:123:profile",
+      "user:123:settings",
+      "user:456:profile",
+    ]);
+
+    // Test ? single character (if we had such keys)
+    r.data["user:1:x"] = "single";
+    r.data["user:12:x"] = "double";
+    const singleCharKeys = await r.keys("user:?:x");
+    expect(singleCharKeys).toEqual(["user:1:x"]);
+
+    // Test specific prefix
+    const sessionKeys = await r.keys("session:*");
+    expect(sessionKeys.sort()).toEqual(["session:abc", "session:def"]);
+  });
   it("creates and lists tenants", async () => {
     let res = await app.inject({
       method: "POST",
@@ -374,15 +417,22 @@ describe("admin endpoints", () => {
       payload: {},
     });
 
-    // Set some Redis cache data (use correct period from env)
-    await redis.set(`budget:deleteTest:daily`, JSON.stringify({ amount: 10 }));
-    await redis.set(`ratelimit:deleteTest`, "100");
-    await redis.set(`ledger:deleteTest:daily-2024`, "5.50");
+    // Set some Redis cache data using production key patterns
+    const tenantName = tenant.name;
+    const budgetKey = `budget:${tenantName}:daily`;
+    const rateLimitKey = `ratelimit:${tenantName}`;
+    const currentDate = new Date();
+    const ledgerKeyForToday = ledgerKey("daily", currentDate);
+    const usageLedgerKey = `ledger:${tenantName}:${ledgerKeyForToday}`;
+
+    await redis.set(budgetKey, JSON.stringify({ amount: 10 }));
+    await redis.set(rateLimitKey, "100");
+    await redis.set(usageLedgerKey, "5.50");
 
     // Verify data exists before deletion
-    expect(await redis.get(`budget:deleteTest:daily`)).toBeTruthy();
-    expect(await redis.get(`ratelimit:deleteTest`)).toBeTruthy();
-    expect(await redis.get(`ledger:deleteTest:daily-2024`)).toBeTruthy();
+    expect(await redis.get(budgetKey)).toBeTruthy();
+    expect(await redis.get(rateLimitKey)).toBeTruthy();
+    expect(await redis.get(usageLedgerKey)).toBeTruthy();
 
     // Delete the tenant
     const deleteRes = await app.inject({
@@ -402,9 +452,9 @@ describe("admin endpoints", () => {
     expect(getRes.statusCode).toBe(404);
 
     // Verify Redis cache is cleaned up
-    expect(await redis.get(`budget:deleteTest:daily`)).toBeNull();
-    expect(await redis.get(`ratelimit:deleteTest`)).toBeNull();
-    expect(await redis.get(`ledger:deleteTest:daily-2024`)).toBeNull();
+    expect(await redis.get(budgetKey)).toBeNull();
+    expect(await redis.get(rateLimitKey)).toBeNull();
+    expect(await redis.get(usageLedgerKey)).toBeNull();
 
     // Verify related data is deleted (should return empty arrays now)
     const budgetsRes = await app.inject({

@@ -1123,8 +1123,10 @@ export async function buildServer() {
             const ledgerKeys = await redisClient.keys(
               `ledger:${existingTenant.name}:*`,
             );
-            for (const key of ledgerKeys) {
-              await redisClient.del(key);
+            if (ledgerKeys.length > 0) {
+              await (redisClient.del as (...keys: string[]) => Promise<number>)(
+                ...ledgerKeys,
+              );
             }
           } catch (redisError) {
             app.log.warn(
