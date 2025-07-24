@@ -8,13 +8,14 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { createClient } from "redis";
 import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { countTokensAndCost } from "./token.js";
 import {
   ledgerKey,
   getBudgetPeriods,
   ALLOWED_PERIODS,
+  isValidPeriod,
   type Period,
 } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
@@ -34,6 +35,60 @@ const DEFAULT_BUDGET = Number(
 );
 
 const BUDGET_PERIODS = getBudgetPeriods();
+
+// Helper function to write budget cache for both recurring and custom budgets
+async function writeBudgetCache(
+  budget: {
+    period: string;
+    amountUsd: string | number | Prisma.Decimal;
+    startDate?: Date | null;
+    endDate?: Date | null;
+  },
+  tenantName: string,
+  prisma: import("@prisma/client").PrismaClient,
+  redisClient: ReturnType<typeof createClient> | undefined,
+  customStartDate?: Date,
+  customEndDate?: Date,
+) {
+  if (budget.period === "daily" || budget.period === "monthly") {
+    // For recurring budgets, write cache with current period dates
+    const { startDate: currentStart, endDate: currentEnd } = await readBudget({
+      tenant: tenantName,
+      period: budget.period,
+      prisma,
+      redis: redisClient,
+      defaultBudget: DEFAULT_BUDGET,
+    });
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      currentStart,
+      currentEnd,
+      redisClient,
+    );
+  } else if (customStartDate && customEndDate) {
+    // For custom budgets, use provided dates
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      customStartDate,
+      customEndDate,
+      redisClient,
+    );
+  } else if (budget.startDate && budget.endDate) {
+    // For custom budgets using budget's own dates
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      budget.startDate,
+      budget.endDate,
+      redisClient,
+    );
+  }
+}
 
 export async function buildServer() {
   const app = fastify({
@@ -1316,27 +1371,13 @@ export async function buildServer() {
         }
         let startDate: Date | undefined;
         let endDate: Date | undefined;
-        const now = new Date();
-        if (b.period === "monthly") {
-          startDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-          );
-          endDate = new Date(
-            Date.UTC(
-              now.getUTCFullYear(),
-              now.getUTCMonth() + 1,
-              0,
-              23,
-              59,
-              59,
-              999,
-            ),
-          );
-        } else if (b.period === "daily") {
-          startDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-          );
-          endDate = new Date(startDate.getTime() + 86400000 - 1);
+
+        // For daily and monthly budgets, store null dates (they are recurring)
+        // For custom budgets, store the specific dates
+        if (b.period === "monthly" || b.period === "daily") {
+          // Recurring budgets - no specific dates stored in DB
+          startDate = undefined;
+          endDate = undefined;
         } else if (b.period === "custom") {
           if (
             !b.startDate ||
@@ -1374,24 +1415,24 @@ export async function buildServer() {
             data,
           });
           results.push(updated);
-          await writeBudget(
+          await writeBudgetCache(
+            updated,
             tenantRec.name,
-            updated.period,
-            parseFloat(updated.amountUsd.toString()),
-            startDate!,
-            endDate!,
+            prisma,
             redisClient,
+            startDate,
+            endDate,
           );
         } else {
           const created = await prisma.budget.create({ data });
           results.push(created);
-          await writeBudget(
+          await writeBudgetCache(
+            created,
             tenantRec.name,
-            created.period,
-            parseFloat(created.amountUsd.toString()),
-            startDate!,
-            endDate!,
+            prisma,
             redisClient,
+            startDate,
+            endDate,
           );
         }
       }
@@ -1431,8 +1472,66 @@ export async function buildServer() {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
       const id = Number(tenantId);
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) {
+        return reply.code(404).send({ error: "Tenant not found" });
+      }
+
       const budgets = await prisma.budget.findMany({ where: { tenantId: id } });
-      return reply.send(budgets);
+
+      // Enhance budgets with current period information
+      const enhancedBudgets = await Promise.all(
+        budgets.map(async (budget) => {
+          try {
+            // Get current period dates for this budget
+            const { startDate, endDate } = await readBudget({
+              tenant: tenant.name,
+              period: budget.period,
+              prisma,
+              redis: redisClient,
+              defaultBudget: DEFAULT_BUDGET,
+            });
+
+            // Get current usage for this period
+            let currentUsage = 0;
+            if (redisClient) {
+              if (!isValidPeriod(budget.period)) {
+                app.log.error(`Invalid period: ${budget.period}`);
+                throw new Error(`Invalid period: ${budget.period}`);
+              }
+              const key = ledgerKey(budget.period, new Date(), {
+                startDate,
+                endDate,
+              });
+              const val = await redisClient.get(`ledger:${tenant.name}:${key}`);
+              currentUsage = val ? parseFloat(val) : 0;
+            }
+
+            return {
+              ...budget,
+              currentPeriodStartDate: startDate.toISOString(),
+              currentPeriodEndDate: endDate.toISOString(),
+              currentUsage,
+              isRecurring:
+                budget.period === "daily" || budget.period === "monthly",
+            };
+          } catch (error) {
+            // Log error for debugging but provide fallback for graceful degradation
+            app.log.error(
+              error,
+              `Error enhancing budget ${budget.id} with current period information`,
+            );
+            return {
+              ...budget,
+              currentUsage: 0,
+              isRecurring:
+                budget.period === "daily" || budget.period === "monthly",
+            };
+          }
+        }),
+      );
+
+      return reply.send(enhancedBudgets);
     },
   );
 
@@ -1670,36 +1769,22 @@ export async function buildServer() {
         endDate: string;
       }>;
       try {
-        let startDate: Date | undefined = data.startDate
-          ? new Date(data.startDate)
-          : undefined;
-        let endDate: Date | undefined = data.endDate
-          ? new Date(data.endDate)
-          : undefined;
-        if (data.period === "monthly") {
-          const now = new Date();
-          startDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-          );
-          endDate = new Date(
-            Date.UTC(
-              now.getUTCFullYear(),
-              now.getUTCMonth() + 1,
-              0,
-              23,
-              59,
-              59,
-              999,
-            ),
-          );
-        } else if (data.period === "daily") {
-          const now = new Date();
-          startDate = new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-          );
-          endDate = new Date(startDate.getTime() + 86400000 - 1);
-        } else if (data.period === "custom" && (!startDate || !endDate)) {
-          throw new Error("custom period requires dates");
+        let startDate: Date | undefined;
+        let endDate: Date | undefined;
+
+        // For daily and monthly budgets, store null dates (they are recurring)
+        // For custom budgets, use the provided dates
+        if (data.period === "monthly" || data.period === "daily") {
+          // Recurring budgets - no specific dates stored in DB
+          startDate = undefined;
+          endDate = undefined;
+        } else if (data.period === "custom") {
+          startDate = data.startDate ? new Date(data.startDate) : undefined;
+          endDate = data.endDate ? new Date(data.endDate) : undefined;
+          if (!startDate || !endDate) {
+            throw new Error("custom period requires dates");
+          }
+          endDate.setUTCHours(23, 59, 59, 999);
         }
         const updated = await prisma.budget.update({
           where: { id },
@@ -1714,14 +1799,7 @@ export async function buildServer() {
           where: { id: updated.tenantId },
         });
         if (tenantRec) {
-          await writeBudget(
-            tenantRec.name,
-            updated.period,
-            parseFloat(updated.amountUsd.toString()),
-            updated.startDate!,
-            updated.endDate!,
-            redisClient,
-          );
+          await writeBudgetCache(updated, tenantRec.name, prisma, redisClient);
         }
         return reply.send(updated);
       } catch {

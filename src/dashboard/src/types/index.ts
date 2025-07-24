@@ -26,6 +26,11 @@ export interface Budget {
   endDate: string | null;
   createdAt: string;
   tenant?: Tenant;
+  // New properties from enhanced API response
+  currentPeriodStartDate?: string;
+  currentPeriodEndDate?: string;
+  currentUsage?: number;
+  isRecurring?: boolean;
 }
 
 export interface UsageLedger {
@@ -101,8 +106,8 @@ export interface CreateBudgetRequest {
   budgets: Array<{
     period: "daily" | "monthly" | "custom";
     amountUsd: number;
-    startDate?: string;
-    endDate?: string;
+    startDate?: string; // Only for custom periods
+    endDate?: string; // Only for custom periods
   }>;
 }
 

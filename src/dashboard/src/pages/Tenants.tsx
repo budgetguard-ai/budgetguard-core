@@ -18,14 +18,17 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Info as InfoIcon,
+  AccountBalance as BudgetIcon,
 } from "@mui/icons-material";
-import { useTenants } from "../hooks/useApi";
+import { useTenants, useTenantBudgets, useTenantUsage } from "../hooks/useApi";
+import { formatCurrency } from "../utils/currency";
 import {
   CreateTenantDialog,
   EditTenantDialog,
   DeleteConfirmationDialog,
+  ManageBudgetsDialog,
 } from "../components/dialogs";
-import type { Tenant } from "../types";
+import type { Tenant, Budget, BudgetUsage } from "../types";
 
 const Tenants: React.FC = () => {
   const { data: tenants, isLoading, error } = useTenants();
@@ -34,6 +37,7 @@ const Tenants: React.FC = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
 
   const handleEditTenant = (tenant: Tenant) => {
@@ -46,10 +50,16 @@ const Tenants: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
+  const handleManageBudgets = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setBudgetDialogOpen(true);
+  };
+
   const handleCloseDialogs = () => {
     setCreateDialogOpen(false);
     setEditDialogOpen(false);
     setDeleteDialogOpen(false);
+    setBudgetDialogOpen(false);
     setSelectedTenant(null);
   };
 
@@ -76,6 +86,145 @@ const Tenants: React.FC = () => {
       </CardContent>
     </Card>
   );
+
+  // Budget info component for each tenant
+  const TenantBudgetInfo: React.FC<{ tenant: Tenant }> = ({ tenant }) => {
+    const { data: budgets = [] } = useTenantBudgets(tenant.id);
+    const { data: usage } = useTenantUsage(tenant.id);
+
+    const isExpired = (budget: Budget) => {
+      // Recurring budgets (daily/monthly) never expire
+      if (
+        budget.isRecurring ||
+        budget.period === "daily" ||
+        budget.period === "monthly"
+      ) {
+        return false;
+      }
+
+      // Only custom budgets can expire
+      if (budget.period === "custom" && budget.endDate) {
+        const endDate = new Date(budget.endDate);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        return endDate < today;
+      }
+      return false;
+    };
+
+    const getBudgetStatus = (budget: Budget) => {
+      if (isExpired(budget)) return "default";
+
+      // Use currentUsage from the enhanced API response if available
+      if (budget.currentUsage !== undefined) {
+        const budgetAmount = parseFloat(budget.amountUsd);
+        const usagePercent = (budget.currentUsage / budgetAmount) * 100;
+
+        if (usagePercent >= 90) return "error";
+        if (usagePercent >= 75) return "warning";
+        return "success";
+      }
+
+      // Fallback to usage API data
+      if (!usage || !Array.isArray(usage) || usage.length === 0)
+        return "success";
+
+      const currentUsage = usage.find(
+        (u: BudgetUsage) => u.period === budget.period,
+      );
+      if (!currentUsage) return "success";
+
+      const usagePercent = (currentUsage.usage / currentUsage.budget) * 100;
+
+      if (usagePercent >= 90) return "error";
+      if (usagePercent >= 75) return "warning";
+      return "success";
+    };
+
+    const getCurrentUsage = (budget: Budget) => {
+      // Use currentUsage from the enhanced API response if available
+      if (budget.currentUsage !== undefined) {
+        return budget.currentUsage;
+      }
+
+      // Fallback to usage API data
+      if (!usage || !Array.isArray(usage) || usage.length === 0) return 0;
+      const currentUsage = usage.find(
+        (u: BudgetUsage) => u.period === budget.period,
+      );
+      return currentUsage?.usage || 0;
+    };
+
+    const getBudgetLabel = (budget: Budget) => {
+      if (isExpired(budget)) {
+        return `${formatCurrency(budget.amountUsd)} (${budget.period} - EXPIRED)`;
+      }
+
+      const usage = getCurrentUsage(budget);
+      const periodLabel = budget.isRecurring
+        ? `${budget.period} - recurring`
+        : budget.period;
+
+      return `${formatCurrency(usage)} / ${formatCurrency(budget.amountUsd)} (${periodLabel})`;
+    };
+
+    // Filter active budgets (non-expired)
+    const activeBudgets = budgets.filter((budget) => !isExpired(budget));
+    const expiredBudgets = budgets.filter((budget) => isExpired(budget));
+
+    if (budgets.length === 0) {
+      return (
+        <Box display="flex" alignItems="center" mb={1}>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
+            Budgets:
+          </Typography>
+          <Chip
+            label="Not configured"
+            size="small"
+            color="default"
+            variant="outlined"
+          />
+        </Box>
+      );
+    }
+
+    return (
+      <Box mb={1}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Budgets:
+        </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+          {activeBudgets.map((budget) => (
+            <Chip
+              key={budget.id}
+              label={getBudgetLabel(budget)}
+              size="small"
+              color={getBudgetStatus(budget) as "success" | "warning" | "error"}
+              variant="outlined"
+            />
+          ))}
+          {expiredBudgets.map((budget) => (
+            <Chip
+              key={budget.id}
+              label={getBudgetLabel(budget)}
+              size="small"
+              color="default"
+              variant="outlined"
+              sx={{ opacity: 0.7 }}
+            />
+          ))}
+          {activeBudgets.length === 0 && expiredBudgets.length > 0 && (
+            <Chip
+              label="All budgets expired"
+              size="small"
+              color="default"
+              variant="outlined"
+            />
+          )}
+        </Box>
+      </Box>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -207,7 +356,7 @@ const Tenants: React.FC = () => {
                 )}
                 {tenant.rateLimitPerMin !== null &&
                   tenant.rateLimitPerMin !== undefined && (
-                    <Box display="flex" alignItems="center">
+                    <Box display="flex" alignItems="center" mb={1}>
                       <Typography
                         variant="body2"
                         color="text.secondary"
@@ -223,6 +372,7 @@ const Tenants: React.FC = () => {
                       />
                     </Box>
                   )}
+                <TenantBudgetInfo tenant={tenant} />
               </CardContent>
               <CardActions
                 sx={{ justifyContent: "space-between", p: 2, pt: 0 }}
@@ -231,6 +381,15 @@ const Tenants: React.FC = () => {
                   <Tooltip title="View Details">
                     <IconButton size="small" color="primary">
                       <InfoIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Manage Budgets">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => handleManageBudgets(tenant)}
+                    >
+                      <BudgetIcon />
                     </IconButton>
                   </Tooltip>
                 </Box>
@@ -292,6 +451,12 @@ const Tenants: React.FC = () => {
 
       <DeleteConfirmationDialog
         open={deleteDialogOpen}
+        tenant={selectedTenant}
+        onClose={handleCloseDialogs}
+      />
+
+      <ManageBudgetsDialog
+        open={budgetDialogOpen}
         tenant={selectedTenant}
         onClose={handleCloseDialogs}
       />
