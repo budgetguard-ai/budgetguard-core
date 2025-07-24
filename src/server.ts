@@ -77,6 +77,102 @@ export async function buildServer() {
     routePrefix: "/docs",
   });
 
+  // Register static file serving for dashboard
+  const { fileURLToPath } = await import("url");
+  const path = await import("path");
+  const fs = await import("fs");
+  const fsPromises = fs.promises;
+
+  // Helper function to resolve dashboard dist path
+  const resolveDashboardDistPath = async (dirname: string) => {
+    const paths = [
+      // Development location: src/dashboard/dist
+      path.join(dirname, "..", "src", "dashboard", "dist"),
+      // Production location: dashboard/dist
+      path.join(dirname, "dashboard", "dist"),
+    ];
+
+    for (const distPath of paths) {
+      try {
+        await fsPromises.access(distPath);
+        return distPath;
+      } catch {
+        // Continue to next path
+      }
+    }
+
+    // Return first path as fallback if none exist
+    return paths[0];
+  };
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const dashboardDistPath = await resolveDashboardDistPath(__dirname);
+
+  // Check if dashboard dist exists
+  try {
+    await fsPromises.access(dashboardDistPath);
+    // Manually handle dashboard assets (JS, CSS, etc.)
+    app.get("/dashboard/assets/*", async (req, reply) => {
+      const assetPath = req.url.replace("/dashboard/", "");
+      const fullPath = path.join(dashboardDistPath, assetPath);
+
+      try {
+        await fsPromises.access(fullPath);
+        const content = await fsPromises.readFile(fullPath);
+
+        // Set appropriate content type
+        if (fullPath.endsWith(".js")) {
+          reply.type("application/javascript");
+        } else if (fullPath.endsWith(".css")) {
+          reply.type("text/css");
+        } else if (fullPath.endsWith(".png")) {
+          reply.type("image/png");
+        } else if (fullPath.endsWith(".svg")) {
+          reply.type("image/svg+xml");
+        }
+
+        return reply.send(content);
+      } catch {
+        return reply.code(404).send({ error: "Asset not found" });
+      }
+    });
+
+    // Serve dashboard SPA for main route and all subroutes
+    const serveDashboardSPA = async (
+      req: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const indexPath = path.join(dashboardDistPath, "index.html");
+      try {
+        const indexContent = await fsPromises.readFile(indexPath, "utf8");
+        reply.type("text/html").send(indexContent);
+      } catch {
+        reply.code(404).send({ error: "Dashboard not built" });
+      }
+    };
+
+    app.get("/dashboard", serveDashboardSPA);
+    app.get("/dashboard/*", async (req, reply) => {
+      // Skip asset requests - they're handled above
+      if (req.url.includes("/assets/")) {
+        return;
+      }
+
+      // Serve SPA for all other dashboard routes
+      await serveDashboardSPA(req, reply);
+    });
+  } catch {
+    // Dashboard dist doesn't exist
+    // If dashboard not built, show helpful message
+    app.get("/dashboard", async (req, reply) => {
+      reply.code(404).send({
+        error: "Dashboard not built",
+        message: "Run 'npm run build:dashboard' to build the dashboard first",
+      });
+    });
+  }
+
   let prisma: PrismaClient | undefined;
   app.addHook("onClose", async () => {
     await prisma?.$disconnect();

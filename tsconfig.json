@@ -12,5 +12,5 @@
     "lib": ["es2022"]
   },
   "include": ["src/**/*"],
-  "exclude": ["src/__tests__/**", "src/tests/**"]
+  "exclude": ["src/__tests__/**", "src/tests/**", "src/dashboard/**"]
 }

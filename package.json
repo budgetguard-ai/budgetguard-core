@@ -6,7 +6,9 @@
   "scripts": {
     "predev": "bash scripts/ensure-opa-wasm.sh",
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:dashboard",
+    "build:dashboard": "cd src/dashboard && npm install && npm run build",
+    "dev:dashboard": "cd src/dashboard && npm run dev",
     "prestart": "bash scripts/ensure-opa-wasm.sh",
     "start": "node dist/index.js",
     "migrate": "prisma migrate deploy",
@@ -23,6 +25,7 @@
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/static": "^8.0.1",
     "@fastify/swagger": "^9.5.1",
     "@fastify/swagger-ui": "^5.2.3",
     "@open-policy-agent/opa-wasm": "^1.2.0",
