@@ -976,9 +976,9 @@ export async function buildServer() {
         },
         body: {
           type: "object",
-          properties: { 
+          properties: {
             name: { type: "string" },
-            rateLimitPerMin: { type: "number", nullable: true }
+            rateLimitPerMin: { type: "number", nullable: true },
           },
           additionalProperties: false,
         },
@@ -1027,9 +1027,11 @@ export async function buildServer() {
       }
 
       try {
-        const updateData: { name?: string; rateLimitPerMin?: number | null } = {};
+        const updateData: { name?: string; rateLimitPerMin?: number | null } =
+          {};
         if (name !== undefined) updateData.name = name.trim();
-        if (rateLimitPerMin !== undefined) updateData.rateLimitPerMin = rateLimitPerMin;
+        if (rateLimitPerMin !== undefined)
+          updateData.rateLimitPerMin = rateLimitPerMin;
 
         const updatedTenant = await prisma.tenant.update({
           where: { id },
@@ -1040,7 +1042,8 @@ export async function buildServer() {
         if (rateLimitPerMin !== undefined) {
           await writeRateLimit(
             updatedTenant.name,
-            updatedTenant.rateLimitPerMin ?? Number(process.env.MAX_REQS_PER_MIN || 100),
+            updatedTenant.rateLimitPerMin ??
+              Number(process.env.MAX_REQS_PER_MIN || 100),
             redisClient,
           );
         }
@@ -1100,7 +1103,7 @@ export async function buildServer() {
           await tx.usageLedger.deleteMany({ where: { tenantId: id } });
           await tx.apiKey.deleteMany({ where: { tenantId: id } });
           await tx.budget.deleteMany({ where: { tenantId: id } });
-          
+
           // Finally delete the tenant
           await tx.tenant.delete({ where: { id } });
         });
@@ -1110,19 +1113,24 @@ export async function buildServer() {
           try {
             // Delete rate limit cache
             await redisClient.del(`ratelimit:${existingTenant.name}`);
-            
+
             // Delete budget cache for all periods
             for (const period of BUDGET_PERIODS) {
               await redisClient.del(`budget:${existingTenant.name}:${period}`);
             }
-            
+
             // Delete usage ledger cache (pattern match and delete)
-            const ledgerKeys = await redisClient.keys(`ledger:${existingTenant.name}:*`);
+            const ledgerKeys = await redisClient.keys(
+              `ledger:${existingTenant.name}:*`,
+            );
             for (const key of ledgerKeys) {
               await redisClient.del(key);
             }
           } catch (redisError) {
-            app.log.warn(redisError, "Error cleaning up Redis cache for deleted tenant");
+            app.log.warn(
+              redisError,
+              "Error cleaning up Redis cache for deleted tenant",
+            );
             // Don't fail the request if Redis cleanup fails
           }
         }

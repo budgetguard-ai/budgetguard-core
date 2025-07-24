@@ -28,11 +28,11 @@ vi.mock("redis", () => {
       this.data[key] = val;
     }
     async del(...keys: string[]) {
-      keys.forEach(key => delete this.data[key]);
+      keys.forEach((key) => delete this.data[key]);
     }
     async keys(pattern: string) {
-      const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-      return Object.keys(this.data).filter(key => regex.test(key));
+      const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+      return Object.keys(this.data).filter((key) => regex.test(key));
     }
     async incrByFloat(key: string, val: number) {
       const cur = parseFloat(this.data[key] ?? "0");
@@ -142,16 +142,21 @@ vi.mock("@prisma/client", () => {
       const [removed] = this.rows.splice(idx, 1);
       return removed as T;
     }
-    async deleteMany({ where }: { where: Partial<T> }): Promise<{ count: number }> {
+    async deleteMany({
+      where,
+    }: {
+      where: Partial<T>;
+    }): Promise<{ count: number }> {
       const toDelete = this.rows.filter((r) =>
         Object.entries(where).every(
           ([k, v]) => (r as Record<string, unknown>)[k] === v,
         ),
       );
-      this.rows = this.rows.filter((r) =>
-        !Object.entries(where).every(
-          ([k, v]) => (r as Record<string, unknown>)[k] === v,
-        ),
+      this.rows = this.rows.filter(
+        (r) =>
+          !Object.entries(where).every(
+            ([k, v]) => (r as Record<string, unknown>)[k] === v,
+          ),
       );
       return { count: toDelete.length };
     }
