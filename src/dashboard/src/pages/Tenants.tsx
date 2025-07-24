@@ -21,6 +21,7 @@ import {
   AccountBalance as BudgetIcon,
 } from "@mui/icons-material";
 import { useTenants, useTenantBudgets, useTenantUsage } from "../hooks/useApi";
+import { formatCurrency } from "../utils/currency";
 import {
   CreateTenantDialog,
   EditTenantDialog,
@@ -90,16 +91,6 @@ const Tenants: React.FC = () => {
   const TenantBudgetInfo: React.FC<{ tenant: Tenant }> = ({ tenant }) => {
     const { data: budgets = [] } = useTenantBudgets(tenant.id);
     const { data: usage } = useTenantUsage(tenant.id);
-
-    const formatCurrency = (amount: string | number) => {
-      const value = typeof amount === "string" ? parseFloat(amount) : amount;
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(value);
-    };
 
     const isExpired = (budget: Budget) => {
       // Recurring budgets (daily/monthly) never expire

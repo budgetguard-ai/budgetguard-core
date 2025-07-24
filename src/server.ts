@@ -8,13 +8,14 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { createClient } from "redis";
 import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { countTokensAndCost } from "./token.js";
 import {
   ledgerKey,
   getBudgetPeriods,
   ALLOWED_PERIODS,
+  isValidPeriod,
   type Period,
 } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
@@ -34,6 +35,60 @@ const DEFAULT_BUDGET = Number(
 );
 
 const BUDGET_PERIODS = getBudgetPeriods();
+
+// Helper function to write budget cache for both recurring and custom budgets
+async function writeBudgetCache(
+  budget: {
+    period: string;
+    amountUsd: string | number | Prisma.Decimal;
+    startDate?: Date | null;
+    endDate?: Date | null;
+  },
+  tenantName: string,
+  prisma: import("@prisma/client").PrismaClient,
+  redisClient: ReturnType<typeof createClient> | undefined,
+  customStartDate?: Date,
+  customEndDate?: Date,
+) {
+  if (budget.period === "daily" || budget.period === "monthly") {
+    // For recurring budgets, write cache with current period dates
+    const { startDate: currentStart, endDate: currentEnd } = await readBudget({
+      tenant: tenantName,
+      period: budget.period,
+      prisma,
+      redis: redisClient,
+      defaultBudget: DEFAULT_BUDGET,
+    });
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      currentStart,
+      currentEnd,
+      redisClient,
+    );
+  } else if (customStartDate && customEndDate) {
+    // For custom budgets, use provided dates
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      customStartDate,
+      customEndDate,
+      redisClient,
+    );
+  } else if (budget.startDate && budget.endDate) {
+    // For custom budgets using budget's own dates
+    await writeBudget(
+      tenantName,
+      budget.period,
+      parseFloat(budget.amountUsd.toString()),
+      budget.startDate,
+      budget.endDate,
+      redisClient,
+    );
+  }
+}
 
 export async function buildServer() {
   const app = fastify({
@@ -1360,67 +1415,25 @@ export async function buildServer() {
             data,
           });
           results.push(updated);
-          // For recurring budgets, write cache with current period dates
-          if (updated.period === "daily" || updated.period === "monthly") {
-            // Get current period dates for caching
-            const { startDate: currentStart, endDate: currentEnd } =
-              await readBudget({
-                tenant: tenantRec.name,
-                period: updated.period,
-                prisma,
-                redis: redisClient,
-                defaultBudget: DEFAULT_BUDGET,
-              });
-            await writeBudget(
-              tenantRec.name,
-              updated.period,
-              parseFloat(updated.amountUsd.toString()),
-              currentStart,
-              currentEnd,
-              redisClient,
-            );
-          } else if (startDate && endDate) {
-            await writeBudget(
-              tenantRec.name,
-              updated.period,
-              parseFloat(updated.amountUsd.toString()),
-              startDate,
-              endDate,
-              redisClient,
-            );
-          }
+          await writeBudgetCache(
+            updated,
+            tenantRec.name,
+            prisma,
+            redisClient,
+            startDate,
+            endDate,
+          );
         } else {
           const created = await prisma.budget.create({ data });
           results.push(created);
-          // For recurring budgets, write cache with current period dates
-          if (created.period === "daily" || created.period === "monthly") {
-            // Get current period dates for caching
-            const { startDate: currentStart, endDate: currentEnd } =
-              await readBudget({
-                tenant: tenantRec.name,
-                period: created.period,
-                prisma,
-                redis: redisClient,
-                defaultBudget: DEFAULT_BUDGET,
-              });
-            await writeBudget(
-              tenantRec.name,
-              created.period,
-              parseFloat(created.amountUsd.toString()),
-              currentStart,
-              currentEnd,
-              redisClient,
-            );
-          } else if (startDate && endDate) {
-            await writeBudget(
-              tenantRec.name,
-              created.period,
-              parseFloat(created.amountUsd.toString()),
-              startDate,
-              endDate,
-              redisClient,
-            );
-          }
+          await writeBudgetCache(
+            created,
+            tenantRec.name,
+            prisma,
+            redisClient,
+            startDate,
+            endDate,
+          );
         }
       }
       return reply.send(results);
@@ -1482,7 +1495,11 @@ export async function buildServer() {
             // Get current usage for this period
             let currentUsage = 0;
             if (redisClient) {
-              const key = ledgerKey(budget.period as Period, new Date(), {
+              if (!isValidPeriod(budget.period)) {
+                app.log.error(`Invalid period: ${budget.period}`);
+                throw new Error(`Invalid period: ${budget.period}`);
+              }
+              const key = ledgerKey(budget.period, new Date(), {
                 startDate,
                 endDate,
               });
@@ -1498,8 +1515,12 @@ export async function buildServer() {
               isRecurring:
                 budget.period === "daily" || budget.period === "monthly",
             };
-          } catch {
-            // Fallback for any errors
+          } catch (error) {
+            // Log error for debugging but provide fallback for graceful degradation
+            app.log.error(
+              error,
+              `Error enhancing budget ${budget.id} with current period information`,
+            );
             return {
               ...budget,
               currentUsage: 0,
@@ -1778,35 +1799,7 @@ export async function buildServer() {
           where: { id: updated.tenantId },
         });
         if (tenantRec) {
-          // For recurring budgets, write cache with current period dates
-          if (updated.period === "daily" || updated.period === "monthly") {
-            // Get current period dates for caching
-            const { startDate: currentStart, endDate: currentEnd } =
-              await readBudget({
-                tenant: tenantRec.name,
-                period: updated.period,
-                prisma,
-                redis: redisClient,
-                defaultBudget: DEFAULT_BUDGET,
-              });
-            await writeBudget(
-              tenantRec.name,
-              updated.period,
-              parseFloat(updated.amountUsd.toString()),
-              currentStart,
-              currentEnd,
-              redisClient,
-            );
-          } else if (updated.startDate && updated.endDate) {
-            await writeBudget(
-              tenantRec.name,
-              updated.period,
-              parseFloat(updated.amountUsd.toString()),
-              updated.startDate,
-              updated.endDate,
-              redisClient,
-            );
-          }
+          await writeBudgetCache(updated, tenantRec.name, prisma, redisClient);
         }
         return reply.send(updated);
       } catch {

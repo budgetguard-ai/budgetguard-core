@@ -1,6 +1,13 @@
 export const ALLOWED_PERIODS = ["daily", "monthly", "custom"] as const;
 export type Period = (typeof ALLOWED_PERIODS)[number];
 
+/**
+ * Type guard to check if a string is a valid Period
+ */
+export function isValidPeriod(period: string): period is Period {
+  return ALLOWED_PERIODS.includes(period as Period);
+}
+
 export function getBudgetPeriods(): Period[] {
   const raw =
     process.env.BUDGET_PERIODS || process.env.BUDGET_PERIOD || "monthly";

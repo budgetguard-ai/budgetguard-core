@@ -34,6 +34,7 @@ import {
   useDeleteBudget,
 } from "../../hooks/useApi";
 import type { Tenant, Budget, CreateBudgetRequest } from "../../types";
+import { formatCurrency } from "../../utils/currency";
 
 interface ManageBudgetsDialogProps {
   open: boolean;
@@ -209,13 +210,6 @@ const ManageBudgetsDialog: React.FC<ManageBudgetsDialogProps> = ({
     setEditingBudget(null);
     resetForm();
     onClose();
-  };
-
-  const formatCurrency = (amount: string) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(parseFloat(amount));
   };
 
   const formatPeriod = (period: string) => {
