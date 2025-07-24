@@ -27,8 +27,20 @@ vi.mock("redis", () => {
     async setEx(key: string, _ttl: number, val: string) {
       this.data[key] = val;
     }
-    async del(key: string) {
-      delete this.data[key];
+    async del(...keys: string[]) {
+      keys.forEach((key) => delete this.data[key]);
+    }
+    async keys(pattern: string) {
+      // Convert Redis pattern to JavaScript regex
+      // Redis patterns support: * (any chars), ? (single char), [abc] (char class)
+      const regex = new RegExp(
+        pattern
+          .replace(/([.+^$(){}|[\]\\])/g, "\\$1") // Escape regex special characters
+          .replace(/\*/g, ".*") // Convert '*' to '.*' (any characters)
+          .replace(/\?/g, "."), // Convert '?' to '.' (single character)
+        // Note: [abc] character classes work as-is in regex
+      );
+      return Object.keys(this.data).filter((key) => regex.test(key));
     }
     async incrByFloat(key: string, val: number) {
       const cur = parseFloat(this.data[key] ?? "0");
@@ -138,6 +150,21 @@ vi.mock("@prisma/client", () => {
       const [removed] = this.rows.splice(idx, 1);
       return removed as T;
     }
+    async deleteMany({
+      where,
+    }: {
+      where: Partial<T>;
+    }): Promise<{ count: number }> {
+      const toDelete: T[] = [];
+      this.rows = this.rows.filter((r) => {
+        const matches = Object.entries(where).every(
+          ([k, v]) => (r as Record<string, unknown>)[k] === v,
+        );
+        if (matches) toDelete.push(r);
+        return !matches;
+      });
+      return { count: toDelete.length };
+    }
   }
   class FakePrisma {
     tenant = new Collection<Tenant>();
@@ -150,6 +177,14 @@ vi.mock("@prisma/client", () => {
       actor: string;
       event: string;
       details: string;
+    }>();
+    usageLedger = new Collection<{
+      id: number;
+      tenantId: number;
+      usd: string;
+      promptTokens: number;
+      completionTokens: number;
+      timestamp: Date;
     }>();
 
     constructor() {
@@ -167,6 +202,10 @@ vi.mock("@prisma/client", () => {
 
     async $connect() {}
     async $disconnect() {}
+    async $transaction<T>(fn: (tx: FakePrisma) => Promise<T>): Promise<T> {
+      // For tests, just execute the transaction function with this instance
+      return fn(this);
+    }
   }
   class Decimal {
     private val: string;
@@ -218,6 +257,41 @@ afterAll(async () => {
 });
 
 describe("admin endpoints", () => {
+  it("Redis pattern matching works correctly", async () => {
+    // Test the improved Redis pattern matching
+    const r = redis as unknown as {
+      data: Record<string, string>;
+      keys: (pattern: string) => Promise<string[]>;
+    };
+
+    // Set up test data with various patterns
+    r.data = {
+      "user:123:profile": "data1",
+      "user:456:profile": "data2",
+      "user:123:settings": "data3",
+      "session:abc": "data4",
+      "session:def": "data5",
+      "cache:temp1": "data6",
+    };
+
+    // Test * wildcard
+    const userKeys = await r.keys("user:*");
+    expect(userKeys.sort()).toEqual([
+      "user:123:profile",
+      "user:123:settings",
+      "user:456:profile",
+    ]);
+
+    // Test ? single character (if we had such keys)
+    r.data["user:1:x"] = "single";
+    r.data["user:12:x"] = "double";
+    const singleCharKeys = await r.keys("user:?:x");
+    expect(singleCharKeys).toEqual(["user:1:x"]);
+
+    // Test specific prefix
+    const sessionKeys = await r.keys("session:*");
+    expect(sessionKeys.sort()).toEqual(["session:abc", "session:def"]);
+  });
   it("creates and lists tenants", async () => {
     let res = await app.inject({
       method: "POST",
@@ -236,6 +310,176 @@ describe("admin endpoints", () => {
     });
     const list = res.json();
     expect(list.length).toBe(1);
+  });
+
+  it("updates tenant information", async () => {
+    // Create a tenant first
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/admin/tenant",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "updateTest" },
+    });
+    expect(createRes.statusCode).toBe(200);
+    const tenant = createRes.json();
+
+    // Update tenant name
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "updatedName" },
+    });
+    expect(updateRes.statusCode).toBe(200);
+    const updated = updateRes.json();
+    expect(updated.name).toBe("updatedName");
+    expect(updated.id).toBe(tenant.id);
+
+    // Update rate limit
+    const rateLimitRes = await app.inject({
+      method: "PUT",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { rateLimitPerMin: 50 },
+    });
+    expect(rateLimitRes.statusCode).toBe(200);
+    expect(rateLimitRes.json().rateLimitPerMin).toBe(50);
+
+    // Verify both fields can be updated together
+    const bothRes = await app.inject({
+      method: "PUT",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "finalName", rateLimitPerMin: 25 },
+    });
+    expect(bothRes.statusCode).toBe(200);
+    const final = bothRes.json();
+    expect(final.name).toBe("finalName");
+    expect(final.rateLimitPerMin).toBe(25);
+  });
+
+  it("handles update tenant validation errors", async () => {
+    // Create a tenant first
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/admin/tenant",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "validationTest" },
+    });
+    const tenant = createRes.json();
+
+    // Test empty name
+    const emptyNameRes = await app.inject({
+      method: "PUT",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "" },
+    });
+    expect(emptyNameRes.statusCode).toBe(400);
+    expect(emptyNameRes.json().error).toBe("Name cannot be empty");
+
+    // Test non-existent tenant
+    const notFoundRes = await app.inject({
+      method: "PUT",
+      url: "/admin/tenant/999",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "test" },
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+    expect(notFoundRes.json().error).toBe("Tenant not found");
+  });
+
+  it("deletes tenants and cascades related data", async () => {
+    // Create a tenant first
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/admin/tenant",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "deleteTest" },
+    });
+    const tenant = createRes.json();
+
+    // Add some related data
+    await app.inject({
+      method: "POST",
+      url: `/admin/tenant/${tenant.id}/budgets`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { budgets: [{ period: "daily", amountUsd: 10 }] },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/admin/tenant/${tenant.id}/apikeys`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: {},
+    });
+
+    // Set some Redis cache data using production key patterns
+    const tenantName = tenant.name;
+    const budgetKey = `budget:${tenantName}:daily`;
+    const rateLimitKey = `ratelimit:${tenantName}`;
+    const currentDate = new Date();
+    const ledgerKeyForToday = ledgerKey("daily", currentDate);
+    const usageLedgerKey = `ledger:${tenantName}:${ledgerKeyForToday}`;
+
+    await redis.set(budgetKey, JSON.stringify({ amount: 10 }));
+    await redis.set(rateLimitKey, "100");
+    await redis.set(usageLedgerKey, "5.50");
+
+    // Verify data exists before deletion
+    expect(await redis.get(budgetKey)).toBeTruthy();
+    expect(await redis.get(rateLimitKey)).toBeTruthy();
+    expect(await redis.get(usageLedgerKey)).toBeTruthy();
+
+    // Delete the tenant
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(deleteRes.statusCode).toBe(200);
+    expect(deleteRes.json().ok).toBe(true);
+
+    // Verify tenant is deleted
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/admin/tenant/${tenant.id}`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(getRes.statusCode).toBe(404);
+
+    // Verify Redis cache is cleaned up
+    expect(await redis.get(budgetKey)).toBeNull();
+    expect(await redis.get(rateLimitKey)).toBeNull();
+    expect(await redis.get(usageLedgerKey)).toBeNull();
+
+    // Verify related data is deleted (should return empty arrays now)
+    const budgetsRes = await app.inject({
+      method: "GET",
+      url: `/admin/tenant/${tenant.id}/budgets`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(budgetsRes.statusCode).toBe(200);
+    expect(budgetsRes.json()).toEqual([]); // Empty array since tenant data was deleted
+
+    const apiKeysRes = await app.inject({
+      method: "GET",
+      url: `/admin/tenant/${tenant.id}/apikeys`,
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(apiKeysRes.statusCode).toBe(200);
+    expect(apiKeysRes.json()).toEqual([]); // Empty array since tenant data was deleted
+  });
+
+  it("handles delete tenant errors", async () => {
+    // Test non-existent tenant
+    const notFoundRes = await app.inject({
+      method: "DELETE",
+      url: "/admin/tenant/999",
+      headers: { "x-admin-key": "adminkey" },
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+    expect(notFoundRes.json().error).toBe("Tenant not found");
   });
 
   it("manages budgets", async () => {

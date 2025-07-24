@@ -5,6 +5,7 @@ import type {
   ModelPricing,
   HealthResponse,
   CreateTenantRequest,
+  UpdateTenantRequest,
   UpdateRateLimitRequest,
   CreateBudgetRequest,
   CreateModelPricingRequest,
@@ -36,13 +37,23 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
+    // Set Content-Type header only when a request body is provided
+    const headers: Record<string, string> = {
+      "X-Admin-Key": this.adminKey,
+    };
+
+    if (options.body && options.body !== "") {
+      headers["Content-Type"] = "application/json";
+    }
+
+    // Merge with any additional headers from options
+    if (options.headers) {
+      Object.assign(headers, options.headers);
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Admin-Key": this.adminKey,
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -72,6 +83,19 @@ class ApiClient {
     return this.request<Tenant>("/admin/tenant", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateTenant(id: number, data: UpdateTenantRequest): Promise<Tenant> {
+    return this.request<Tenant>(`/admin/tenant/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTenant(id: number): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(`/admin/tenant/${id}`, {
+      method: "DELETE",
     });
   }
 
