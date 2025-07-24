@@ -37,12 +37,12 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    // Only set Content-Type header if there's a body
+    // Set Content-Type header only when a request body is provided
     const headers: Record<string, string> = {
       "X-Admin-Key": this.adminKey,
     };
 
-    if (options.body) {
+    if (options.body && options.body !== "") {
       headers["Content-Type"] = "application/json";
     }
 

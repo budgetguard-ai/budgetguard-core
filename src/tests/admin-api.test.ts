@@ -155,17 +155,14 @@ vi.mock("@prisma/client", () => {
     }: {
       where: Partial<T>;
     }): Promise<{ count: number }> {
-      const toDelete = this.rows.filter((r) =>
-        Object.entries(where).every(
+      const toDelete: T[] = [];
+      this.rows = this.rows.filter((r) => {
+        const matches = Object.entries(where).every(
           ([k, v]) => (r as Record<string, unknown>)[k] === v,
-        ),
-      );
-      this.rows = this.rows.filter(
-        (r) =>
-          !Object.entries(where).every(
-            ([k, v]) => (r as Record<string, unknown>)[k] === v,
-          ),
-      );
+        );
+        if (matches) toDelete.push(r);
+        return !matches;
+      });
       return { count: toDelete.length };
     }
   }
