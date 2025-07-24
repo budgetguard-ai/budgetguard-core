@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -8,11 +8,50 @@ import {
   Grid,
   Chip,
   Skeleton,
+  Button,
+  CardActions,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Info as InfoIcon,
+} from "@mui/icons-material";
 import { useTenants } from "../hooks/useApi";
+import {
+  CreateTenantDialog,
+  EditTenantDialog,
+  DeleteConfirmationDialog,
+} from "../components/dialogs";
+import type { Tenant } from "../types";
 
 const Tenants: React.FC = () => {
   const { data: tenants, isLoading, error } = useTenants();
+
+  // Dialog states
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+
+  const handleEditTenant = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteTenant = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleCloseDialogs = () => {
+    setCreateDialogOpen(false);
+    setEditDialogOpen(false);
+    setDeleteDialogOpen(false);
+    setSelectedTenant(null);
+  };
 
   // Skeleton loading component
   const TenantCardSkeleton = () => (
@@ -67,21 +106,35 @@ const Tenants: React.FC = () => {
   }
 
   return (
-    <Box sx={{ width: "100%", maxWidth: "100%" }}>
-      <Typography
-        variant="h4"
-        component="h1"
-        gutterBottom
-        sx={{ fontWeight: 600, mb: 4 }}
+    <Box sx={{ width: "100%", maxWidth: "100%", position: "relative" }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 4,
+        }}
       >
-        Tenant Management
-      </Typography>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+          Tenant Management
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setCreateDialogOpen(true)}
+          sx={{ minWidth: 140 }}
+        >
+          Create Tenant
+        </Button>
+      </Box>
 
       <Grid container spacing={3}>
         {tenants?.map((tenant) => (
           <Grid item xs={12} md={6} lg={6} key={tenant.id}>
-            <Card>
-              <CardContent>
+            <Card
+              sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+            >
+              <CardContent sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
                   {tenant.name}
                 </Typography>
@@ -171,18 +224,77 @@ const Tenants: React.FC = () => {
                     </Box>
                   )}
               </CardContent>
+              <CardActions
+                sx={{ justifyContent: "space-between", p: 2, pt: 0 }}
+              >
+                <Box>
+                  <Tooltip title="View Details">
+                    <IconButton size="small" color="primary">
+                      <InfoIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Box>
+                  <Tooltip title="Edit Tenant">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => handleEditTenant(tenant)}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete Tenant">
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => handleDeleteTenant(tenant)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </CardActions>
             </Card>
           </Grid>
         ))}
       </Grid>
 
       {tenants?.length === 0 && (
-        <Box textAlign="center" py={4}>
-          <Typography variant="h6" color="text.secondary">
+        <Box textAlign="center" py={8}>
+          <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
             No tenants found
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Create your first tenant to get started
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+          >
+            Create Tenant
+          </Button>
         </Box>
       )}
+
+      {/* Dialogs */}
+      <CreateTenantDialog
+        open={createDialogOpen}
+        onClose={handleCloseDialogs}
+      />
+
+      <EditTenantDialog
+        open={editDialogOpen}
+        tenant={selectedTenant}
+        onClose={handleCloseDialogs}
+      />
+
+      <DeleteConfirmationDialog
+        open={deleteDialogOpen}
+        tenant={selectedTenant}
+        onClose={handleCloseDialogs}
+      />
     </Box>
   );
 };

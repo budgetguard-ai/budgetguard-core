@@ -37,13 +37,23 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
+    // Only set Content-Type header if there's a body
+    const headers: Record<string, string> = {
+      "X-Admin-Key": this.adminKey,
+    };
+
+    if (options.body) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    // Merge with any additional headers from options
+    if (options.headers) {
+      Object.assign(headers, options.headers);
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Admin-Key": this.adminKey,
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
