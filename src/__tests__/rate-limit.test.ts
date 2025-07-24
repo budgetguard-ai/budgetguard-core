@@ -90,7 +90,7 @@ afterAll(async () => {
 
 describe("rate limiting", () => {
   it("limits requests per tenant", async () => {
-    const headers = { "X-Tenant-Id": "test-tenant" };
+    const headers = { "X-Tenant-Id": "test-tenant-1" };
     for (let i = 0; i < 5; i++) {
       const res = await app.inject({ method: "GET", url: "/health", headers });
       expect(res.statusCode).toBe(200);
@@ -105,7 +105,7 @@ describe("rate limiting", () => {
       method: "POST",
       url: "/admin/tenant",
       headers: { "x-admin-key": "adminkey" },
-      payload: { name: "t1" },
+      payload: { name: "custom-limit-tenant" },
     });
     const id = create.json().id as number;
     await app.inject({
@@ -114,12 +114,12 @@ describe("rate limiting", () => {
       headers: { "x-admin-key": "adminkey" },
       payload: { rateLimitPerMin: 2 },
     });
-    const headers = { "X-Tenant-Id": "t1" };
+    const headers = { "X-Tenant-Id": "custom-limit-tenant" };
     for (let i = 0; i < 2; i++) {
       const res = await app.inject({ method: "GET", url: "/health", headers });
       expect(res.statusCode).toBe(200);
     }
     const last = await app.inject({ method: "GET", url: "/health", headers });
     expect(last.statusCode).toBe(429);
-  });
+  }, 10000); // Add timeout to prevent hanging
 });

@@ -964,6 +964,177 @@ export async function buildServer() {
     },
   );
 
+  app.put(
+    "/admin/tenant/:tenantId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: { 
+            name: { type: "string" },
+            rateLimitPerMin: { type: "number", nullable: true }
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              id: { type: "number" },
+              name: { type: "string" },
+              rateLimitPerMin: { type: "number", nullable: true },
+              createdAt: { type: "string" },
+              updatedAt: { type: "string" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const { name, rateLimitPerMin } = req.body as {
+        name?: string;
+        rateLimitPerMin?: number | null;
+      };
+
+      // Check if tenant exists
+      const existingTenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!existingTenant) {
+        return reply.code(404).send({ error: "Tenant not found" });
+      }
+
+      // Validate name if provided
+      if (name !== undefined && (!name || name.trim().length === 0)) {
+        return reply.code(400).send({ error: "Name cannot be empty" });
+      }
+
+      try {
+        const updateData: { name?: string; rateLimitPerMin?: number | null } = {};
+        if (name !== undefined) updateData.name = name.trim();
+        if (rateLimitPerMin !== undefined) updateData.rateLimitPerMin = rateLimitPerMin;
+
+        const updatedTenant = await prisma.tenant.update({
+          where: { id },
+          data: updateData,
+        });
+
+        // Update rate limit cache if rate limit was changed
+        if (rateLimitPerMin !== undefined) {
+          await writeRateLimit(
+            updatedTenant.name,
+            updatedTenant.rateLimitPerMin ?? Number(process.env.MAX_REQS_PER_MIN || 100),
+            redisClient,
+          );
+        }
+
+        return reply.send(updatedTenant);
+      } catch (error) {
+        app.log.error(error, "Error updating tenant");
+        return reply.code(400).send({ error: "Unable to update tenant" });
+      }
+    },
+  );
+
+  app.delete(
+    "/admin/tenant/:tenantId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: { ok: { type: "boolean" } },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+
+      // Check if tenant exists
+      const existingTenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!existingTenant) {
+        return reply.code(404).send({ error: "Tenant not found" });
+      }
+
+      try {
+        // Use transaction to ensure all related data is deleted consistently
+        await prisma.$transaction(async (tx) => {
+          // Delete related records in correct order to handle foreign key constraints
+          await tx.auditLog.deleteMany({ where: { tenantId: id } });
+          await tx.usageLedger.deleteMany({ where: { tenantId: id } });
+          await tx.apiKey.deleteMany({ where: { tenantId: id } });
+          await tx.budget.deleteMany({ where: { tenantId: id } });
+          
+          // Finally delete the tenant
+          await tx.tenant.delete({ where: { id } });
+        });
+
+        // Clean up Redis cache
+        if (redisClient) {
+          try {
+            // Delete rate limit cache
+            await redisClient.del(`ratelimit:${existingTenant.name}`);
+            
+            // Delete budget cache for all periods
+            for (const period of BUDGET_PERIODS) {
+              await redisClient.del(`budget:${existingTenant.name}:${period}`);
+            }
+            
+            // Delete usage ledger cache (pattern match and delete)
+            const ledgerKeys = await redisClient.keys(`ledger:${existingTenant.name}:*`);
+            for (const key of ledgerKeys) {
+              await redisClient.del(key);
+            }
+          } catch (redisError) {
+            app.log.warn(redisError, "Error cleaning up Redis cache for deleted tenant");
+            // Don't fail the request if Redis cleanup fails
+          }
+        }
+
+        return reply.send({ ok: true });
+      } catch (error) {
+        app.log.error(error, "Error deleting tenant");
+        return reply.code(400).send({ error: "Unable to delete tenant" });
+      }
+    },
+  );
+
   app.get(
     "/admin/tenant/:tenantId/ratelimit",
     {
