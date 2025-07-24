@@ -18,6 +18,16 @@ class ApiClient {
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "";
     this.adminKey = import.meta.env.VITE_ADMIN_API_KEY || "your-admin-key-here";
+
+    // Security check: Prevent default admin key in production
+    if (
+      import.meta.env.MODE === "production" &&
+      this.adminKey === "your-admin-key-here"
+    ) {
+      throw new Error(
+        "Critical: Admin API key is not configured in production. Set VITE_ADMIN_API_KEY environment variable.",
+      );
+    }
   }
 
   private async request<T>(

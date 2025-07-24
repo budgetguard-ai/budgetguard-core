@@ -39,8 +39,10 @@ Edit `.env` with your configuration:
 
 ```env
 VITE_API_BASE_URL=http://localhost:3000
-VITE_ADMIN_API_KEY=your-admin-key-here
+VITE_ADMIN_API_KEY=your-secure-admin-key-123
 ```
+
+**Security Note:** Always use a strong, unique admin key in production. The dashboard will throw an error if the default key is detected in production mode.
 
 ### 3. Start Development Server
 

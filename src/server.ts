@@ -81,32 +81,45 @@ export async function buildServer() {
   const { fileURLToPath } = await import("url");
   const path = await import("path");
   const fs = await import("fs");
+  const fsPromises = fs.promises;
+
+  // Helper function to resolve dashboard dist path
+  const resolveDashboardDistPath = async (dirname: string) => {
+    const paths = [
+      // Development location: src/dashboard/dist
+      path.join(dirname, "..", "src", "dashboard", "dist"),
+      // Production location: dashboard/dist
+      path.join(dirname, "dashboard", "dist"),
+    ];
+
+    for (const distPath of paths) {
+      try {
+        await fsPromises.access(distPath);
+        return distPath;
+      } catch {
+        // Continue to next path
+      }
+    }
+
+    // Return first path as fallback if none exist
+    return paths[0];
+  };
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  // In development, dashboard is in src/dashboard/dist
-  // In production build, we need to check both locations
-  let dashboardDistPath = path.join(
-    __dirname,
-    "..",
-    "src",
-    "dashboard",
-    "dist",
-  );
-  if (!fs.existsSync(dashboardDistPath)) {
-    // Fallback for production build location
-    dashboardDistPath = path.join(__dirname, "dashboard", "dist");
-  }
+  const dashboardDistPath = await resolveDashboardDistPath(__dirname);
 
   // Check if dashboard dist exists
-  if (fs.existsSync(dashboardDistPath)) {
+  try {
+    await fsPromises.access(dashboardDistPath);
     // Manually handle dashboard assets (JS, CSS, etc.)
     app.get("/dashboard/assets/*", async (req, reply) => {
       const assetPath = req.url.replace("/dashboard/", "");
       const fullPath = path.join(dashboardDistPath, assetPath);
 
-      if (fs.existsSync(fullPath)) {
-        const content = fs.readFileSync(fullPath);
+      try {
+        await fsPromises.access(fullPath);
+        const content = await fsPromises.readFile(fullPath);
 
         // Set appropriate content type
         if (fullPath.endsWith(".js")) {
@@ -120,9 +133,9 @@ export async function buildServer() {
         }
 
         return reply.send(content);
+      } catch {
+        return reply.code(404).send({ error: "Asset not found" });
       }
-
-      return reply.code(404).send({ error: "Asset not found" });
     });
 
     // Serve dashboard SPA for main route and all subroutes
@@ -131,10 +144,10 @@ export async function buildServer() {
       reply: FastifyReply,
     ) => {
       const indexPath = path.join(dashboardDistPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        const indexContent = fs.readFileSync(indexPath, "utf8");
+      try {
+        const indexContent = await fsPromises.readFile(indexPath, "utf8");
         reply.type("text/html").send(indexContent);
-      } else {
+      } catch {
         reply.code(404).send({ error: "Dashboard not built" });
       }
     };
@@ -149,7 +162,8 @@ export async function buildServer() {
       // Serve SPA for all other dashboard routes
       await serveDashboardSPA(req, reply);
     });
-  } else {
+  } catch {
+    // Dashboard dist doesn't exist
     // If dashboard not built, show helpful message
     app.get("/dashboard", async (req, reply) => {
       reply.code(404).send({

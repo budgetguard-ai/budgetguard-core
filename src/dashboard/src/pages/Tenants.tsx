@@ -14,13 +14,6 @@ import { useTenants } from "../hooks/useApi";
 const Tenants: React.FC = () => {
   const { data: tenants, isLoading, error } = useTenants();
 
-  // Debug: log tenant data to see what we're getting
-  React.useEffect(() => {
-    if (tenants) {
-      console.log("Tenant data:", tenants);
-    }
-  }, [tenants]);
-
   // Skeleton loading component
   const TenantCardSkeleton = () => (
     <Card sx={{ width: "100%", boxSizing: "border-box" }}>
