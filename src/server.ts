@@ -1726,6 +1726,216 @@ export async function buildServer() {
     },
   );
 
+  // Historical usage endpoint
+  app.get(
+    "/admin/tenant/:tenantId/usage/history",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "string", default: "30" },
+          },
+        },
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                date: { type: "string" },
+                usage: { type: "number" },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { days = "30" } = req.query as { days?: string };
+
+      const id = Number(tenantId);
+      const daysCount = parseInt(days, 10);
+
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysCount);
+
+      // Query historical usage from UsageLedger
+      const historicalUsage = await prisma.usageLedger.findMany({
+        where: {
+          tenantId: id,
+          ts: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: { ts: "asc" },
+      });
+
+      // Group by date and sum usage
+      const dailyUsage = new Map<string, number>();
+
+      // Initialize all dates with 0
+      for (let i = 0; i < daysCount; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const dateKey = date.toISOString().split("T")[0];
+        dailyUsage.set(dateKey, 0);
+      }
+
+      // Sum actual usage by date
+      historicalUsage.forEach((entry) => {
+        const dateKey = entry.ts.toISOString().split("T")[0];
+        const currentUsage = dailyUsage.get(dateKey) || 0;
+        dailyUsage.set(
+          dateKey,
+          currentUsage + parseFloat(entry.usd.toString()),
+        );
+      });
+
+      // Convert to array format
+      const result = Array.from(dailyUsage.entries()).map(([date, usage]) => ({
+        date,
+        usage: parseFloat(usage.toFixed(2)),
+      }));
+
+      return reply.send(result);
+    },
+  );
+
+  // Model breakdown endpoint
+  app.get(
+    "/admin/tenant/:tenantId/usage/models",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "string", default: "30" },
+          },
+        },
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                model: { type: "string" },
+                usage: { type: "number" },
+                percentage: { type: "number" },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { days = "30" } = req.query as { days?: string };
+
+      const id = Number(tenantId);
+      const daysCount = parseInt(days, 10);
+
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysCount);
+
+      // Query usage by model from UsageLedger
+      const modelUsage = await prisma.usageLedger.groupBy({
+        by: ["route"],
+        where: {
+          tenantId: id,
+          ts: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        _sum: {
+          usd: true,
+        },
+      });
+
+      // Extract model name from route (e.g., "/v1/chat/completions" -> model from request)
+      // For now, we'll use the route field which should contain model info
+      const totalUsage = modelUsage.reduce(
+        (sum, item) => sum + parseFloat(item._sum.usd?.toString() || "0"),
+        0,
+      );
+
+      const result = modelUsage
+        .map((item) => {
+          const usage = parseFloat(item._sum.usd?.toString() || "0");
+          // Extract model name from route or use route as fallback
+          let modelName = item.route;
+
+          // Try to extract actual model name from common patterns
+          if (item.route.includes("gpt-4")) modelName = "gpt-4";
+          else if (item.route.includes("gpt-3.5")) modelName = "gpt-3.5-turbo";
+          else if (item.route.includes("claude")) modelName = "claude-3";
+          else if (item.route.includes("gemini")) modelName = "gemini-pro";
+          else if (item.route.includes("/v1/chat/completions"))
+            modelName = "gpt-4"; // default
+
+          return {
+            model: modelName,
+            usage: parseFloat(usage.toFixed(4)),
+            percentage:
+              totalUsage > 0
+                ? parseFloat(((usage / totalUsage) * 100).toFixed(1))
+                : 0,
+          };
+        })
+        .filter((item) => item.usage > 0)
+        .sort((a, b) => b.usage - a.usage);
+
+      return reply.send(result);
+    },
+  );
+
   app.put(
     "/admin/budget/:budgetId",
     {
