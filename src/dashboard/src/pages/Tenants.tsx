@@ -19,6 +19,7 @@ import {
   Delete as DeleteIcon,
   Info as InfoIcon,
   AccountBalance as BudgetIcon,
+  Key as KeyIcon,
 } from "@mui/icons-material";
 import { useTenants, useTenantBudgets, useTenantUsage } from "../hooks/useApi";
 import { formatCurrency } from "../utils/currency";
@@ -27,6 +28,7 @@ import {
   EditTenantDialog,
   DeleteConfirmationDialog,
   ManageBudgetsDialog,
+  ManageApiKeysDialog,
 } from "../components/dialogs";
 import type { Tenant, Budget, BudgetUsage } from "../types";
 
@@ -38,6 +40,7 @@ const Tenants: React.FC = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
+  const [apiKeysDialogOpen, setApiKeysDialogOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
 
   const handleEditTenant = (tenant: Tenant) => {
@@ -55,11 +58,17 @@ const Tenants: React.FC = () => {
     setBudgetDialogOpen(true);
   };
 
+  const handleManageApiKeys = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setApiKeysDialogOpen(true);
+  };
+
   const handleCloseDialogs = () => {
     setCreateDialogOpen(false);
     setEditDialogOpen(false);
     setDeleteDialogOpen(false);
     setBudgetDialogOpen(false);
+    setApiKeysDialogOpen(false);
     setSelectedTenant(null);
   };
 
@@ -257,7 +266,7 @@ const Tenants: React.FC = () => {
       <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
         Tenant Management
       </Typography>
-      
+
       <Box sx={{ mb: 4 }}>
         <Button
           variant="contained"
@@ -271,12 +280,22 @@ const Tenants: React.FC = () => {
 
       <Grid container spacing={3}>
         {tenants?.map((tenant) => (
-          <Grid item xs={12} sm={6} md={4} lg={4} key={tenant.id}>
+          <Grid
+            item
+            xs={12}
+            sm={6}
+            md={4}
+            lg={4}
+            key={tenant.id}
+            sx={{ minWidth: 320 }} // Add this line
+          >
             <Card
               sx={{
                 display: "flex",
                 flexDirection: "column",
-                minWidth: 320,
+                width: "100%", // Let the grid control the width
+                minWidth: 0, // Prevent overflow and overlap
+                boxSizing: "border-box",
               }}
             >
               <CardContent sx={{ flexGrow: 1 }}>
@@ -388,6 +407,15 @@ const Tenants: React.FC = () => {
                       <BudgetIcon />
                     </IconButton>
                   </Tooltip>
+                  <Tooltip title="Manage API Keys">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => handleManageApiKeys(tenant)}
+                    >
+                      <KeyIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
                 <Box>
                   <Tooltip title="Edit Tenant">
@@ -453,6 +481,12 @@ const Tenants: React.FC = () => {
 
       <ManageBudgetsDialog
         open={budgetDialogOpen}
+        tenant={selectedTenant}
+        onClose={handleCloseDialogs}
+      />
+
+      <ManageApiKeysDialog
+        open={apiKeysDialogOpen}
         tenant={selectedTenant}
         onClose={handleCloseDialogs}
       />

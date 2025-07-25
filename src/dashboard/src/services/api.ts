@@ -174,6 +174,92 @@ class ApiClient {
     >(`/admin/tenant/${tenantId}/usage/models?days=${days}`);
   }
 
+  async getTenantUsageLedger(
+    tenantId: number,
+    params?: {
+      days?: number;
+      page?: number;
+      limit?: number;
+      model?: string;
+      route?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+  ): Promise<{
+    data: Array<{
+      id: string;
+      ts: string;
+      tenant: string;
+      route: string;
+      model: string;
+      usd: string;
+      promptTok: number;
+      compTok: number;
+      tenantId: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.days) queryParams.append("days", params.days.toString());
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.model) queryParams.append("model", params.model);
+    if (params?.route) queryParams.append("route", params.route);
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+
+    const queryString = queryParams.toString();
+    const url = `/admin/tenant/${tenantId}/usage/ledger${queryString ? `?${queryString}` : ""}`;
+
+    return this.request(url);
+  }
+
+  async getUsageLedger(params?: {
+    days?: number;
+    page?: number;
+    limit?: number;
+    model?: string;
+    route?: string;
+    tenant?: string;
+    tenantId?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    data: Array<{
+      id: string;
+      ts: string;
+      tenant: string;
+      route: string;
+      model: string;
+      usd: string;
+      promptTok: number;
+      compTok: number;
+      tenantId: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.days) queryParams.append("days", params.days.toString());
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.model) queryParams.append("model", params.model);
+    if (params?.route) queryParams.append("route", params.route);
+    if (params?.tenant) queryParams.append("tenant", params.tenant);
+    if (params?.tenantId)
+      queryParams.append("tenantId", params.tenantId.toString());
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+
+    const queryString = queryParams.toString();
+    const url = `/admin/usage/ledger${queryString ? `?${queryString}` : ""}`;
+
+    return this.request(url);
+  }
+
   // API Key endpoints
   async getTenantApiKeys(tenantId: number): Promise<ApiKey[]> {
     return this.request<ApiKey[]>(`/admin/tenant/${tenantId}/apikeys`);

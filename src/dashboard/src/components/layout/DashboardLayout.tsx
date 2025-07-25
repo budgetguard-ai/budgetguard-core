@@ -19,13 +19,15 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   People as PeopleIcon,
-  Analytics as AnalyticsIcon,
   Settings as SettingsIcon,
   LightMode as LightModeIcon,
   DarkMode as DarkModeIcon,
+  History as HistoryIcon,
+  SmartToy as ModelsIcon,
 } from "@mui/icons-material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDashboardStore } from "../../hooks/useStore";
+import logoPng from "../../assets/logo.png";
 
 const drawerWidth = 280;
 
@@ -36,9 +38,10 @@ interface NavigationItem {
 }
 
 const navigationItems: NavigationItem[] = [
-  { text: "Overview", icon: <DashboardIcon />, path: "/overview" },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/usage" },
   { text: "Tenants", icon: <PeopleIcon />, path: "/tenants" },
-  { text: "Usage Analytics", icon: <AnalyticsIcon />, path: "/usage" },
+  { text: "Usage History", icon: <HistoryIcon />, path: "/usage-history" },
+  { text: "Models", icon: <ModelsIcon />, path: "/models" },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
 ];
 
@@ -69,14 +72,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const drawer = (
     <div>
       <Toolbar>
-        <Typography
-          variant="h6"
-          noWrap
-          component="div"
-          sx={{ fontWeight: 600 }}
-        >
-          BudgetGuard
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.1 }}>
+          <img
+            src={logoPng}
+            alt="BudgetGuard Logo"
+            style={{ width: 48, height: 48 }}
+          />
+          <Typography
+            variant="h4"
+            noWrap
+            component="div"
+            sx={{
+              fontWeight: 600,
+              fontFamily: '"Space Grotesk", sans-serif',
+            }}
+          >
+            BudgetGuard
+          </Typography>
+        </Box>
       </Toolbar>
       <Divider />
       <List>
@@ -122,15 +135,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         ))}
       </List>
       <Divider sx={{ mt: "auto" }} />
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', gap: 1 }}>
+      <Box sx={{ p: 2, display: "flex", justifyContent: "center", gap: 1 }}>
         <IconButton
           onClick={toggleTheme}
           size="small"
           sx={{
-            color: appTheme === 'light' ? theme.palette.primary.main : theme.palette.text.secondary,
-            '&:hover': {
+            color:
+              appTheme === "light"
+                ? theme.palette.primary.main
+                : theme.palette.text.secondary,
+            "&:hover": {
               backgroundColor: theme.palette.action.hover,
-            }
+            },
           }}
         >
           <LightModeIcon />
@@ -139,10 +155,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           onClick={toggleTheme}
           size="small"
           sx={{
-            color: appTheme === 'dark' ? theme.palette.primary.main : theme.palette.text.secondary,
-            '&:hover': {
+            color:
+              appTheme === "dark"
+                ? theme.palette.primary.main
+                : theme.palette.text.secondary,
+            "&:hover": {
               backgroundColor: theme.palette.action.hover,
-            }
+            },
           }}
         >
           <DarkModeIcon />
@@ -158,11 +177,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       {isMobile && (
         <Box
           sx={{
-            position: 'fixed',
+            position: "fixed",
             top: 16,
             left: 16,
             zIndex: theme.zIndex.drawer + 1,
-            display: mobileOpen ? 'none' : 'block'
+            display: mobileOpen ? "none" : "block",
           }}
         >
           <IconButton
@@ -172,9 +191,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             sx={{
               backgroundColor: theme.palette.background.paper,
               boxShadow: theme.shadows[2],
-              '&:hover': {
+              "&:hover": {
                 backgroundColor: theme.palette.action.hover,
-              }
+              },
             }}
           >
             <MenuIcon />

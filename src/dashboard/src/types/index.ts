@@ -38,11 +38,19 @@ export interface UsageLedger {
   ts: string;
   tenant: string;
   route: string;
+  model: string;
   usd: string; // Decimal as string
   promptTok: number;
   compTok: number;
   tenantId: number | null;
   tenantRef?: Tenant;
+}
+
+export interface UsageLedgerResponse {
+  data: UsageLedger[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface ModelPricing {

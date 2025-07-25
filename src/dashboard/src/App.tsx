@@ -10,6 +10,8 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import Overview from "./pages/Overview";
 import Tenants from "./pages/Tenants";
 import Usage from "./pages/Usage";
+import UsageHistory from "./pages/UsageHistory";
+import Models from "./pages/Models";
 import Settings from "./pages/Settings";
 
 const App: FC = () => {
@@ -18,10 +20,12 @@ const App: FC = () => {
       <Box sx={{ display: "flex", minHeight: "100vh" }}>
         <DashboardLayout>
           <Routes>
-            <Route path="/" element={<Navigate to="/overview" replace />} />
+            <Route path="/" element={<Navigate to="/usage" replace />} />
             <Route path="/overview" element={<Overview />} />
             <Route path="/tenants" element={<Tenants />} />
             <Route path="/usage" element={<Usage />} />
+            <Route path="/usage-history" element={<UsageHistory />} />
+            <Route path="/models" element={<Models />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </DashboardLayout>
