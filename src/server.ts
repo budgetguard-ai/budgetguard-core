@@ -281,10 +281,11 @@ export async function buildServer() {
     let usd = 0;
     let promptTok = 0;
     let compTok = 0;
+    let model: string | undefined = undefined;
 
     try {
       const body = req.body as Record<string, unknown> | undefined;
-      const model =
+      model =
         (body?.model as string) ||
         (typeof resp === "object" && resp !== null && "model" in resp
           ? (resp as OpenAIResponse).model
@@ -350,6 +351,7 @@ export async function buildServer() {
       ts: Date.now().toString(),
       tenant: (req.headers["x-tenant-id"] as string) || "public",
       route: req.routeOptions.url ?? req.url,
+      model: model || "unknown",
       usd: usd.toFixed(6),
       promptTok: promptTok.toString(),
       compTok: compTok.toString(),
@@ -1723,6 +1725,201 @@ export async function buildServer() {
         usage[p] = val ? parseFloat(val) : 0;
       }
       return reply.send(usage);
+    },
+  );
+
+  // Historical usage endpoint
+  app.get(
+    "/admin/tenant/:tenantId/usage/history",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "string", default: "30" },
+          },
+        },
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                date: { type: "string" },
+                usage: { type: "number" },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { days = "30" } = req.query as { days?: string };
+
+      const id = Number(tenantId);
+      const daysCount = parseInt(days, 10);
+
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysCount);
+
+      // Query historical usage from UsageLedger
+      const historicalUsage = await prisma.usageLedger.findMany({
+        where: {
+          tenantId: id,
+          ts: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        orderBy: { ts: "asc" },
+      });
+
+      // Group by date and sum usage
+      const dailyUsage = new Map<string, number>();
+
+      // Initialize all dates with 0
+      for (let i = 0; i < daysCount; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        const dateKey = date.toISOString().split("T")[0];
+        dailyUsage.set(dateKey, 0);
+      }
+
+      // Sum actual usage by date
+      historicalUsage.forEach((entry) => {
+        const dateKey = entry.ts.toISOString().split("T")[0];
+        const currentUsage = dailyUsage.get(dateKey) || 0;
+        dailyUsage.set(dateKey, currentUsage + entry.usd.toNumber());
+      });
+
+      // Convert to array format
+      const result = Array.from(dailyUsage.entries()).map(([date, usage]) => ({
+        date,
+        usage: parseFloat(usage.toFixed(2)),
+      }));
+
+      return reply.send(result);
+    },
+  );
+
+  // Model breakdown endpoint
+  app.get(
+    "/admin/tenant/:tenantId/usage/models",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "string", default: "30" },
+          },
+        },
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                model: { type: "string" },
+                usage: { type: "number" },
+                percentage: { type: "number" },
+              },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            schema: { type: "string" },
+            required: true,
+            description: "Admin API key from .env",
+          },
+        ],
+        security: [{ AdminApiKey: [] }],
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { days = "30" } = req.query as { days?: string };
+
+      const id = Number(tenantId);
+      const daysCount = parseInt(days, 10);
+
+      const tenant = await prisma.tenant.findUnique({ where: { id } });
+      if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysCount);
+
+      // Query usage by model from UsageLedger
+      const modelUsage = await prisma.usageLedger.groupBy({
+        by: ["model"],
+        where: {
+          tenantId: id,
+          ts: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        _sum: {
+          usd: true,
+        },
+      });
+
+      // Calculate total usage for percentage calculation
+      const totalUsage = modelUsage.reduce(
+        (sum, item) => sum + (item._sum.usd?.toNumber() ?? 0),
+        0,
+      );
+
+      const result = modelUsage
+        .map((item) => {
+          const usage = item._sum.usd?.toNumber() ?? 0;
+          return {
+            model: item.model,
+            usage: parseFloat(usage.toFixed(4)),
+            percentage:
+              totalUsage > 0
+                ? parseFloat(((usage / totalUsage) * 100).toFixed(1))
+                : 0,
+          };
+        })
+        .filter((item) => item.usage > 0)
+        .sort((a, b) => b.usage - a.usage);
+
+      return reply.send(result);
     },
   );
 

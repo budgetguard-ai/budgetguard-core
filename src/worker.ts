@@ -41,6 +41,7 @@ async function main() {
           tenant: data.tenant,
           tenantId: tenantRecord.id,
           route: data.route,
+          model: data.model || "unknown",
           usd: data.usd,
           promptTok: Number(data.promptTok),
           compTok: Number(data.compTok),

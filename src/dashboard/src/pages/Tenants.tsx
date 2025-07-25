@@ -161,9 +161,7 @@ const Tenants: React.FC = () => {
       }
 
       const usage = getCurrentUsage(budget);
-      const periodLabel = budget.isRecurring
-        ? `${budget.period} - recurring`
-        : budget.period;
+      const periodLabel = budget.period;
 
       return `${formatCurrency(usage)} / ${formatCurrency(budget.amountUsd)} (${periodLabel})`;
     };

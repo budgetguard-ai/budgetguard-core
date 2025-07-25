@@ -156,6 +156,24 @@ class ApiClient {
     );
   }
 
+  async getTenantUsageHistory(
+    tenantId: number,
+    days: number = 30,
+  ): Promise<Array<{ date: string; usage: number }>> {
+    return this.request<Array<{ date: string; usage: number }>>(
+      `/admin/tenant/${tenantId}/usage/history?days=${days}`,
+    );
+  }
+
+  async getTenantModelBreakdown(
+    tenantId: number,
+    days: number = 30,
+  ): Promise<Array<{ model: string; usage: number; percentage: number }>> {
+    return this.request<
+      Array<{ model: string; usage: number; percentage: number }>
+    >(`/admin/tenant/${tenantId}/usage/models?days=${days}`);
+  }
+
   // API Key endpoints
   async getTenantApiKeys(tenantId: number): Promise<ApiKey[]> {
     return this.request<ApiKey[]>(`/admin/tenant/${tenantId}/apikeys`);

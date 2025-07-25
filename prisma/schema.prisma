@@ -13,6 +13,7 @@ model UsageLedger {
   ts        DateTime @default(now())
   tenant    String
   route     String
+  model     String
   usd       Decimal
   promptTok Int
   compTok   Int
