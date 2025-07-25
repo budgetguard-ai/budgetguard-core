@@ -254,17 +254,11 @@ const Tenants: React.FC = () => {
 
   return (
     <Box sx={{ width: "100%", maxWidth: "100%", position: "relative" }}>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 4,
-        }}
-      >
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-          Tenant Management
-        </Typography>
+      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
+        Tenant Management
+      </Typography>
+      
+      <Box sx={{ mb: 4 }}>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -277,9 +271,13 @@ const Tenants: React.FC = () => {
 
       <Grid container spacing={3}>
         {tenants?.map((tenant) => (
-          <Grid item xs={12} md={6} lg={6} key={tenant.id}>
+          <Grid item xs={12} sm={6} md={4} lg={4} key={tenant.id}>
             <Card
-              sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                minWidth: 320,
+              }}
             >
               <CardContent sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
