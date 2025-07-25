@@ -1,5 +1,11 @@
 import React from "react";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  TooltipItem,
+} from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 import { Box, Typography, Card, CardContent, Grid } from "@mui/material";
 
@@ -45,11 +51,7 @@ const ModelBreakdownChart: React.FC<ModelBreakdownChartProps> = ({
       },
       tooltip: {
         callbacks: {
-          label: function (context: {
-            label?: string;
-            parsed: number;
-            dataIndex: number;
-          }) {
+          label: function (context: TooltipItem<"doughnut">) {
             const label = context.label || "";
             const value = context.parsed;
             const percentage = data[context.dataIndex]?.percentage || 0;

@@ -281,10 +281,11 @@ export async function buildServer() {
     let usd = 0;
     let promptTok = 0;
     let compTok = 0;
+    let model: string | undefined = undefined;
 
     try {
       const body = req.body as Record<string, unknown> | undefined;
-      const model =
+      model =
         (body?.model as string) ||
         (typeof resp === "object" && resp !== null && "model" in resp
           ? (resp as OpenAIResponse).model
@@ -350,6 +351,7 @@ export async function buildServer() {
       ts: Date.now().toString(),
       tenant: (req.headers["x-tenant-id"] as string) || "public",
       route: req.routeOptions.url ?? req.url,
+      model: model || "unknown",
       usd: usd.toFixed(6),
       promptTok: promptTok.toString(),
       compTok: compTok.toString(),
@@ -1810,10 +1812,7 @@ export async function buildServer() {
       historicalUsage.forEach((entry) => {
         const dateKey = entry.ts.toISOString().split("T")[0];
         const currentUsage = dailyUsage.get(dateKey) || 0;
-        dailyUsage.set(
-          dateKey,
-          currentUsage + parseFloat(entry.usd.toString()),
-        );
+        dailyUsage.set(dateKey, currentUsage + entry.usd.toNumber());
       });
 
       // Convert to array format
@@ -1886,7 +1885,7 @@ export async function buildServer() {
 
       // Query usage by model from UsageLedger
       const modelUsage = await prisma.usageLedger.groupBy({
-        by: ["route"],
+        by: ["model"],
         where: {
           tenantId: id,
           ts: {
@@ -1899,29 +1898,17 @@ export async function buildServer() {
         },
       });
 
-      // Extract model name from route (e.g., "/v1/chat/completions" -> model from request)
-      // For now, we'll use the route field which should contain model info
+      // Calculate total usage for percentage calculation
       const totalUsage = modelUsage.reduce(
-        (sum, item) => sum + parseFloat(item._sum.usd?.toString() || "0"),
+        (sum, item) => sum + (item._sum.usd?.toNumber() ?? 0),
         0,
       );
 
       const result = modelUsage
         .map((item) => {
-          const usage = parseFloat(item._sum.usd?.toString() || "0");
-          // Extract model name from route or use route as fallback
-          let modelName = item.route;
-
-          // Try to extract actual model name from common patterns
-          if (item.route.includes("gpt-4")) modelName = "gpt-4";
-          else if (item.route.includes("gpt-3.5")) modelName = "gpt-3.5-turbo";
-          else if (item.route.includes("claude")) modelName = "claude-3";
-          else if (item.route.includes("gemini")) modelName = "gemini-pro";
-          else if (item.route.includes("/v1/chat/completions"))
-            modelName = "gpt-4"; // default
-
+          const usage = item._sum.usd?.toNumber() ?? 0;
           return {
-            model: modelName,
+            model: item.model,
             usage: parseFloat(usage.toFixed(4)),
             percentage:
               totalUsage > 0

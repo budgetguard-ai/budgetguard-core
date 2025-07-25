@@ -11,6 +11,7 @@ import {
   PointElement,
   BarController,
   LineController,
+  TooltipItem,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { Box, Typography, Card, CardContent } from "@mui/material";
@@ -85,10 +86,7 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
       },
       tooltip: {
         callbacks: {
-          label: function (context: {
-            dataset: { label?: string };
-            parsed: { y: number };
-          }) {
+          label: function (context: TooltipItem<"bar">) {
             const label = context.dataset.label || "";
             const value = context.parsed.y;
             return `${label}: $${value.toFixed(2)}`;

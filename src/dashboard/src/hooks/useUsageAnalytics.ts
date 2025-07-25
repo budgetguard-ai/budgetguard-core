@@ -153,11 +153,10 @@ export const useUsageAnalytics = (
         budgets:
           currentData.daily !== undefined
             ? [
-                budgets.find((b) => b.period === "daily")
-                  ? parseFloat(
-                      budgets.find((b) => b.period === "daily")!.amountUsd,
-                    )
-                  : 0,
+                (() => {
+                  const dailyBudget = budgets.find((b) => b.period === "daily");
+                  return dailyBudget ? parseFloat(dailyBudget.amountUsd) : 0;
+                })(),
               ]
             : [],
       },
@@ -167,11 +166,14 @@ export const useUsageAnalytics = (
         budgets:
           currentData.monthly !== undefined
             ? [
-                budgets.find((b) => b.period === "monthly")
-                  ? parseFloat(
-                      budgets.find((b) => b.period === "monthly")!.amountUsd,
-                    )
-                  : 0,
+                (() => {
+                  const monthlyBudget = budgets.find(
+                    (b) => b.period === "monthly",
+                  );
+                  return monthlyBudget
+                    ? parseFloat(monthlyBudget.amountUsd)
+                    : 0;
+                })(),
               ]
             : [],
       },
@@ -187,11 +189,12 @@ export const useUsageAnalytics = (
         budgets:
           currentData.custom !== undefined && currentData.custom > 0
             ? [
-                budgets.find((b) => b.period === "custom")
-                  ? parseFloat(
-                      budgets.find((b) => b.period === "custom")!.amountUsd,
-                    )
-                  : 0,
+                (() => {
+                  const customBudget = budgets.find(
+                    (b) => b.period === "custom",
+                  );
+                  return customBudget ? parseFloat(customBudget.amountUsd) : 0;
+                })(),
               ]
             : [],
       },

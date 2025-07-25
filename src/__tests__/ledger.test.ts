@@ -78,6 +78,7 @@ describe("usage ledger", () => {
         ts: Date.now().toString(),
         tenant: "t",
         route: "/test",
+        model: "gpt-4",
         usd: "0.1",
         promptTok: "5",
         compTok: "2",

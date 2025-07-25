@@ -8,6 +8,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  TooltipItem,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import { Box, Typography, Card, CardContent } from "@mui/material";
@@ -70,10 +71,7 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
       },
       tooltip: {
         callbacks: {
-          label: function (context: {
-            dataset: { label?: string };
-            parsed: { y: number };
-          }) {
+          label: function (context: TooltipItem<"line">) {
             const label = context.dataset.label || "";
             const value = context.parsed.y;
             return `${label}: $${value.toFixed(2)}`;
