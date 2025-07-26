@@ -9,7 +9,7 @@
 
 **Stop surprise AI bills. Ship with confidence.**
 
-A **FinOps control plane for AI APIs**—a drop‑in API gateway that enforces hard budgets, rate limits, and custom policy checks before any request reaches AI providers.
+A **lightning-fast FinOps control plane for AI APIs**—a drop‑in API gateway that enforces hard budgets, rate limits, and custom policy checks before any request reaches LLM providers.
 
 </div>
 
@@ -22,7 +22,7 @@ A **FinOps control plane for AI APIs**—a drop‑in API gateway that enforces h
 - 🔧 **Policy Engine** - Customizable OPA/Rego policies for advanced request filtering
 - 🌐 **Multi-provider Support** - OpenAI, Anthropic Claude, Google Gemini APIs
 - 🐳 **Self-hosted** - Docker-first deployment, keep your infrastructure and keys private
-- ⚡ **Low Latency** - <100ms added latency to your AI API calls
+- ⚡ **Low Latency** - ~10-15ms added latency to your AI API calls
 - 📈 **Usage Analytics** - Built-in dashboard for monitoring and cost management
 - 🎨 **Modern Dashboard** - React-based UI with Material Design 3, light/dark themes
 
@@ -36,7 +36,7 @@ A **FinOps control plane for AI APIs**—a drop‑in API gateway that enforces h
 | **Runaway scripts & abuse** | Per‑minute rate limits and customizable OPA/Rego policies catch bad actors instantly.                |
 | **FinOps black box**        | Every call is logged to an immutable **UsageLedger** table for audit, chargeback, and forecasting.   |
 | **Multi‑tenant SaaS needs** | Quotas, API keys, and budgets are all **tenant‑aware** out of the box.                               |
-| **Vendor lock‑in fears**    | Self‑hosted, Docker‑first, and <100 ms of added latency. Keep your infra (and keys) private.         |
+| **Vendor lock‑in fears**    | Self‑hosted, Docker‑first, and ~10-15ms of added latency. Keep your infra (and keys) private.         |
 
 ---
 
