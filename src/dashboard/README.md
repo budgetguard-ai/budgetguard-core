@@ -102,33 +102,22 @@ npm run build:dashboard
 
 ## 📱 Screenshots
 
-### System Overview
-*Add screenshot: `screenshots/overview-light.png`*
-- System health status
-- Real-time metrics
-- Quick action buttons
-
 ### Tenant Management
-*Add screenshot: `screenshots/tenants-management.png`*
+![Tenant Management](screenshots/tenant-management.png)
 - Tenant list with search/filter
 - Budget utilization indicators
 - Bulk action controls
 
-### Budget Analytics
-*Add screenshot: `screenshots/budget-analytics.png`*
+### Usage Reports
+![Usage Reports](screenshots/usage-reports.png)
 - Interactive charts
 - Cost breakdown by model
 - Usage trend analysis
 
 ### Dark Theme
-*Add screenshot: `screenshots/dark-theme.png`*
+![Dahboard-Dark](screenshots/dashboard-dark.png)
 - Complete dark mode support
 - Consistent Material Design 3 theming
-
-### Mobile View
-*Add screenshot: `screenshots/mobile-responsive.png`*
-- Responsive layout
-- Touch-optimized controls
 
 ## 🏗️ Architecture
 
