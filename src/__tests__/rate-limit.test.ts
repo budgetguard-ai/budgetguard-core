@@ -4,20 +4,61 @@ import { buildServer } from "../server";
 
 vi.mock("redis", () => {
   class FakeRedis {
-    data: Record<string, string> = {};
+    data: Record<string, string | number> = {};
+    counters: Record<string, { value: number; expires?: number }> = {};
+
     async connect() {}
     async quit() {}
+
     async get(key: string) {
       return this.data[key] ?? null;
     }
+
     async set(key: string, val: string) {
       this.data[key] = val;
     }
+
     async setEx(key: string, _ttl: number, val: string) {
       this.data[key] = val;
     }
+
     async del(key: string) {
       delete this.data[key];
+      delete this.counters[key];
+    }
+
+    // Rate limiting operations used by @fastify/rate-limit
+    async incr(key: string): Promise<number> {
+      if (!this.counters[key]) {
+        this.counters[key] = { value: 0 };
+      }
+      this.counters[key].value += 1;
+      return this.counters[key].value;
+    }
+
+    async expire(key: string, seconds: number): Promise<number> {
+      if (this.counters[key]) {
+        this.counters[key].expires = Date.now() + seconds * 1000;
+        // Auto-cleanup after expiry
+        setTimeout(() => {
+          if (
+            this.counters[key] &&
+            this.counters[key].expires &&
+            Date.now() >= this.counters[key].expires!
+          ) {
+            delete this.counters[key];
+          }
+        }, seconds * 1000);
+        return 1;
+      }
+      return 0;
+    }
+
+    async ttl(key: string): Promise<number> {
+      const counter = this.counters[key];
+      if (!counter || !counter.expires) return -1;
+      const remaining = Math.ceil((counter.expires - Date.now()) / 1000);
+      return remaining > 0 ? remaining : -2;
     }
   }
   const instance = new FakeRedis();
@@ -89,13 +130,48 @@ afterAll(async () => {
 });
 
 describe("rate limiting", () => {
+  it("rejects negative rate limits", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: "/admin/tenant",
+      headers: { "x-admin-key": "adminkey" },
+      payload: { name: "negative-test-tenant" },
+    });
+    const id = create.json().id as number;
+    const response = await app.inject({
+      method: "PUT",
+      url: `/admin/tenant/${id}/ratelimit`,
+      headers: { "x-admin-key": "adminkey" },
+      payload: { rateLimitPerMin: -1 },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().message).toContain("must be >= 0");
+  });
+
   it("limits requests per tenant", async () => {
     const headers = { "X-Tenant-Id": "test-tenant-1" };
     for (let i = 0; i < 5; i++) {
-      const res = await app.inject({ method: "GET", url: "/health", headers });
-      expect(res.statusCode).toBe(200);
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/chat/completions",
+        headers,
+        payload: {
+          messages: [{ role: "user", content: "test" }],
+          model: "gpt-3.5-turbo",
+        },
+      });
+      // Expect either success or some other error, but not rate limit yet
+      expect(res.statusCode).not.toBe(429);
     }
-    const last = await app.inject({ method: "GET", url: "/health", headers });
+    const last = await app.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers,
+      payload: {
+        messages: [{ role: "user", content: "test" }],
+        model: "gpt-3.5-turbo",
+      },
+    });
     expect(last.statusCode).toBe(429);
     expect(last.json()).toEqual({ error: "Rate limit exceeded" });
   }, 20000); // 20 second timeout for this test
@@ -116,10 +192,26 @@ describe("rate limiting", () => {
     });
     const headers = { "X-Tenant-Id": "custom-limit-tenant" };
     for (let i = 0; i < 2; i++) {
-      const res = await app.inject({ method: "GET", url: "/health", headers });
-      expect(res.statusCode).toBe(200);
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/chat/completions",
+        headers,
+        payload: {
+          messages: [{ role: "user", content: "test" }],
+          model: "gpt-3.5-turbo",
+        },
+      });
+      expect(res.statusCode).not.toBe(429);
     }
-    const last = await app.inject({ method: "GET", url: "/health", headers });
+    const last = await app.inject({
+      method: "POST",
+      url: "/v1/chat/completions",
+      headers,
+      payload: {
+        messages: [{ role: "user", content: "test" }],
+        model: "gpt-3.5-turbo",
+      },
+    });
     expect(last.statusCode).toBe(429);
   }, 10000); // Add timeout to prevent hanging
 });

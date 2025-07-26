@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  AppBar,
   Box,
   CssBaseline,
   Drawer,
@@ -14,21 +13,21 @@ import {
   Typography,
   useTheme,
   useMediaQuery,
-  Switch,
-  FormControlLabel,
   Divider,
 } from "@mui/material";
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   People as PeopleIcon,
-  Analytics as AnalyticsIcon,
   Settings as SettingsIcon,
   LightMode as LightModeIcon,
   DarkMode as DarkModeIcon,
+  History as HistoryIcon,
+  SmartToy as ModelsIcon,
 } from "@mui/icons-material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDashboardStore } from "../../hooks/useStore";
+import logoPng from "../../assets/logo.png";
 
 const drawerWidth = 280;
 
@@ -39,9 +38,10 @@ interface NavigationItem {
 }
 
 const navigationItems: NavigationItem[] = [
-  { text: "Overview", icon: <DashboardIcon />, path: "/overview" },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/usage" },
   { text: "Tenants", icon: <PeopleIcon />, path: "/tenants" },
-  { text: "Usage Analytics", icon: <AnalyticsIcon />, path: "/usage" },
+  { text: "Usage History", icon: <HistoryIcon />, path: "/usage-history" },
+  { text: "Models", icon: <ModelsIcon />, path: "/models" },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
 ];
 
@@ -72,14 +72,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const drawer = (
     <div>
       <Toolbar>
-        <Typography
-          variant="h6"
-          noWrap
-          component="div"
-          sx={{ fontWeight: 600 }}
-        >
-          BudgetGuard
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.1 }}>
+          <img
+            src={logoPng}
+            alt="BudgetGuard Logo"
+            style={{ width: 48, height: 48 }}
+          />
+          <Typography
+            variant="h4"
+            noWrap
+            component="div"
+            sx={{
+              fontWeight: 600,
+              fontFamily: '"Space Grotesk", sans-serif',
+            }}
+          >
+            BudgetGuard
+          </Typography>
+        </Box>
       </Toolbar>
       <Divider />
       <List>
@@ -125,19 +135,37 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         ))}
       </List>
       <Divider sx={{ mt: "auto" }} />
-      <Box sx={{ p: 2 }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={appTheme === "dark"}
-              onChange={toggleTheme}
-              icon={<LightModeIcon />}
-              checkedIcon={<DarkModeIcon />}
-            />
-          }
-          label={appTheme === "dark" ? "Dark Mode" : "Light Mode"}
-          sx={{ ml: 0 }}
-        />
+      <Box sx={{ p: 2, display: "flex", justifyContent: "center", gap: 1 }}>
+        <IconButton
+          onClick={toggleTheme}
+          size="small"
+          sx={{
+            color:
+              appTheme === "light"
+                ? theme.palette.primary.main
+                : theme.palette.text.secondary,
+            "&:hover": {
+              backgroundColor: theme.palette.action.hover,
+            },
+          }}
+        >
+          <LightModeIcon />
+        </IconButton>
+        <IconButton
+          onClick={toggleTheme}
+          size="small"
+          sx={{
+            color:
+              appTheme === "dark"
+                ? theme.palette.primary.main
+                : theme.palette.text.secondary,
+            "&:hover": {
+              backgroundColor: theme.palette.action.hover,
+            },
+          }}
+        >
+          <DarkModeIcon />
+        </IconButton>
       </Box>
     </div>
   );
@@ -145,33 +173,33 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   return (
     <Box sx={{ display: "flex" }}>
       <CssBaseline />
-      <AppBar
-        position="fixed"
-        sx={{
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` },
-          backgroundColor: theme.palette.background.paper,
-          color: theme.palette.text.primary,
-          boxShadow:
-            "0px 1px 3px rgba(0, 0, 0, 0.12), 0px 1px 2px rgba(0, 0, 0, 0.24)",
-        }}
-      >
-        <Toolbar>
+      {/* Mobile menu button - only visible on mobile when drawer is closed */}
+      {isMobile && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 16,
+            left: 16,
+            zIndex: theme.zIndex.drawer + 1,
+            display: mobileOpen ? "none" : "block",
+          }}
+        >
           <IconButton
-            color="inherit"
+            color="primary"
             aria-label="open drawer"
-            edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { md: "none" } }}
+            sx={{
+              backgroundColor: theme.palette.background.paper,
+              boxShadow: theme.shadows[2],
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+              },
+            }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {navigationItems.find((item) => item.path === location.pathname)
-              ?.text || "Dashboard"}
-          </Typography>
-        </Toolbar>
-      </AppBar>
+        </Box>
+      )}
 
       <Box
         component="nav"
@@ -225,7 +253,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           backgroundColor: theme.palette.background.default,
         }}
       >
-        <Toolbar />
+        {/* No toolbar spacer needed since AppBar is removed */}
         {children}
       </Box>
     </Box>

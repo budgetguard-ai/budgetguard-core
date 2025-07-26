@@ -374,6 +374,7 @@ export async function buildServer() {
     return payload;
   });
 
+  // Register rate limiting with more restrictive skip function
   await app.register(
     rateLimit as unknown as (
       instance: FastifyInstance,
@@ -396,6 +397,16 @@ export async function buildServer() {
       timeWindow: "1 minute",
       keyGenerator: (req: FastifyRequest) =>
         (req.headers["x-tenant-id"] as string) || "public",
+      allowList: (req: FastifyRequest) => {
+        // Allow admin endpoints, dashboard, docs, and health
+        const url = req.url;
+        return (
+          url.startsWith("/admin") ||
+          url.startsWith("/dashboard") ||
+          url.startsWith("/docs") ||
+          url === "/health"
+        );
+      },
       errorResponseBuilder: () => ({ error: "Rate limit exceeded" }),
     },
   );
@@ -955,25 +966,34 @@ export async function buildServer() {
               properties: {
                 id: { type: "number" },
                 name: { type: "string" },
+                createdAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                },
+                updatedAt: {
+                  type: "string",
+                  format: "date-time",
+                  nullable: true,
+                },
+                rateLimitPerMin: { type: "number", nullable: true }, // <-- Add this
               },
             },
           },
         },
-        parameters: [
-          {
-            in: "header",
-            name: "X-Admin-Key",
-            schema: { type: "string" },
-            required: true,
-            description: "Admin API key from .env",
-          },
-        ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (_req, reply) => {
       const prisma = await getPrisma();
-      const tenants = await prisma.tenant.findMany();
+      const tenants = await prisma.tenant.findMany({
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+          rateLimitPerMin: true, // <-- Add this
+        },
+      });
       return reply.send(tenants);
     },
   );
@@ -1253,7 +1273,10 @@ export async function buildServer() {
         body: {
           type: "object",
           properties: {
-            rateLimitPerMin: { oneOf: [{ type: "number" }, { type: "null" }] },
+            rateLimitPerMin: {
+              type: ["number", "null"],
+              minimum: 0,
+            },
           },
           required: ["rateLimitPerMin"],
         },
@@ -1282,17 +1305,32 @@ export async function buildServer() {
       const { rateLimitPerMin } = req.body as {
         rateLimitPerMin: number | null;
       };
+
+      // Validate rate limit value
+      if (rateLimitPerMin !== null && rateLimitPerMin < 0) {
+        return reply.code(400).send({ error: "Rate limit cannot be negative" });
+      }
+
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
+
       const updated = await prisma.tenant.update({
         where: { id },
         data: { rateLimitPerMin: rateLimitPerMin },
       });
+
+      // Clear cache first, then set new value
+      if (redisClient) {
+        const key = `ratelimit:${tenant.name}`;
+        await redisClient.del(key);
+      }
+
       await writeRateLimit(
         tenant.name,
         updated.rateLimitPerMin ?? Number(process.env.MAX_REQS_PER_MIN || 100),
         redisClient,
       );
+
       return reply.send({ rateLimitPerMin: updated.rateLimitPerMin ?? null });
     },
   );
@@ -1920,6 +1958,347 @@ export async function buildServer() {
         .sort((a, b) => b.usage - a.usage);
 
       return reply.send(result);
+    },
+  );
+
+  // Detailed usage ledger endpoint
+  app.get(
+    "/admin/tenant/:tenantId/usage/ledger",
+    {
+      preHandler: adminAuth,
+      schema: {
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "number", default: 30 },
+            page: { type: "number", default: 0 },
+            limit: { type: "number", default: 100 },
+            model: { type: "string" },
+            route: { type: "string" },
+            startDate: { type: "string" },
+            endDate: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    ts: { type: "string" },
+                    tenant: { type: "string" },
+                    route: { type: "string" },
+                    model: { type: "string" },
+                    usd: { type: "string" },
+                    promptTok: { type: "number" },
+                    compTok: { type: "number" },
+                    tenantId: { type: "number" },
+                  },
+                },
+              },
+              total: { type: "number" },
+              page: { type: "number" },
+              limit: { type: "number" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.params as { tenantId: string };
+      const {
+        days = 30,
+        page = 0,
+        limit = 100,
+        model,
+        route,
+        startDate,
+        endDate,
+      } = request.query as {
+        days?: number;
+        page?: number;
+        limit?: number;
+        model?: string;
+        route?: string;
+        startDate?: string;
+        endDate?: string;
+      };
+
+      const id = parseInt(tenantId);
+      if (isNaN(id)) {
+        return reply.status(400).send({ error: "Invalid tenant ID" });
+      }
+
+      // Build date filter
+      let dateFilter: Record<string, unknown> = {};
+      if (startDate && endDate) {
+        dateFilter = {
+          ts: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        };
+      } else {
+        const startDateCalc = new Date();
+        startDateCalc.setDate(startDateCalc.getDate() - days);
+        dateFilter = {
+          ts: {
+            gte: startDateCalc,
+          },
+        };
+      }
+
+      // Build filters
+      const where: Record<string, unknown> = {
+        tenantId: id,
+        ...dateFilter,
+      };
+
+      if (model) {
+        where.model = {
+          contains: model,
+          mode: "insensitive",
+        };
+      }
+
+      if (route) {
+        where.route = {
+          contains: route,
+          mode: "insensitive",
+        };
+      }
+
+      try {
+        const prismaClient = await getPrisma();
+
+        // Get total count for pagination
+        const total = await prismaClient.usageLedger.count({ where });
+
+        // Get paginated data
+        const ledgerEntries = await prismaClient.usageLedger.findMany({
+          where,
+          orderBy: { ts: "desc" },
+          skip: page * limit,
+          take: limit,
+          include: {
+            tenantRef: true,
+          },
+        });
+
+        const result = {
+          data: ledgerEntries.map((entry) => ({
+            id: entry.id.toString(),
+            ts: entry.ts.toISOString(),
+            tenant: entry.tenant,
+            route: entry.route,
+            model: entry.model,
+            usd: entry.usd.toString(),
+            promptTok: entry.promptTok,
+            compTok: entry.compTok,
+            tenantId: entry.tenantId,
+          })),
+          total,
+          page,
+          limit,
+        };
+
+        return reply.send(result);
+      } catch (error) {
+        console.error("Error fetching usage ledger:", error);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch usage ledger" });
+      }
+    },
+  );
+
+  // General usage ledger endpoint (all tenants)
+  app.get(
+    "/admin/usage/ledger",
+    {
+      preHandler: adminAuth,
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "number", default: 30 },
+            page: { type: "number", default: 0 },
+            limit: { type: "number", default: 100 },
+            model: { type: "string" },
+            route: { type: "string" },
+            tenant: { type: "string" },
+            tenantId: { type: "number" },
+            startDate: { type: "string" },
+            endDate: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    ts: { type: "string" },
+                    tenant: { type: "string" },
+                    route: { type: "string" },
+                    model: { type: "string" },
+                    usd: { type: "string" },
+                    promptTok: { type: "number" },
+                    compTok: { type: "number" },
+                    tenantId: { type: "number" },
+                  },
+                },
+              },
+              total: { type: "number" },
+              page: { type: "number" },
+              limit: { type: "number" },
+            },
+          },
+        },
+        parameters: [
+          {
+            in: "header",
+            name: "X-Admin-Key",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+      },
+    },
+    async (request, reply) => {
+      const {
+        days = 30,
+        page = 0,
+        limit = 100,
+        model,
+        route,
+        tenant,
+        tenantId,
+        startDate,
+        endDate,
+      } = request.query as {
+        days?: number;
+        page?: number;
+        limit?: number;
+        model?: string;
+        route?: string;
+        tenant?: string;
+        tenantId?: number;
+        startDate?: string;
+        endDate?: string;
+      };
+
+      // Build date filter
+      let dateFilter: Record<string, unknown> = {};
+      if (startDate && endDate) {
+        dateFilter = {
+          ts: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        };
+      } else {
+        const startDateCalc = new Date();
+        startDateCalc.setDate(startDateCalc.getDate() - days);
+        dateFilter = {
+          ts: {
+            gte: startDateCalc,
+          },
+        };
+      }
+
+      // Build filters
+      const where: Record<string, unknown> = {
+        ...dateFilter,
+      };
+
+      if (tenantId) {
+        where.tenantId = tenantId;
+      }
+
+      if (tenant) {
+        where.tenant = {
+          contains: tenant,
+          mode: "insensitive",
+        };
+      }
+
+      if (model) {
+        where.model = {
+          contains: model,
+          mode: "insensitive",
+        };
+      }
+
+      if (route) {
+        where.route = {
+          contains: route,
+          mode: "insensitive",
+        };
+      }
+
+      try {
+        const prismaClient = await getPrisma();
+
+        // Get total count for pagination
+        const total = await prismaClient.usageLedger.count({ where });
+
+        // Get paginated data
+        const ledgerEntries = await prismaClient.usageLedger.findMany({
+          where,
+          orderBy: { ts: "desc" },
+          skip: page * limit,
+          take: limit,
+          include: {
+            tenantRef: true,
+          },
+        });
+
+        const result = {
+          data: ledgerEntries.map((entry) => ({
+            id: entry.id.toString(),
+            ts: entry.ts.toISOString(),
+            tenant: entry.tenant,
+            route: entry.route,
+            model: entry.model,
+            usd: entry.usd.toString(),
+            promptTok: entry.promptTok,
+            compTok: entry.compTok,
+            tenantId: entry.tenantId,
+          })),
+          total,
+          page,
+          limit,
+        };
+
+        return reply.send(result);
+      } catch (error) {
+        console.error("Error fetching general usage ledger:", error);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch usage ledger" });
+      }
     },
   );
 

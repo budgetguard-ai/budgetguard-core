@@ -19,6 +19,10 @@ export const queryKeys = {
   tenantBudgets: (id: number) => ["tenant", id, "budgets"] as const,
   tenantUsage: (id: number) => ["tenant", id, "usage"] as const,
   tenantApiKeys: (id: number) => ["tenant", id, "apiKeys"] as const,
+  tenantUsageLedger: (id: number, params?: Record<string, unknown>) =>
+    ["tenant", id, "usageLedger", params] as const,
+  usageLedger: (params?: Record<string, unknown>) =>
+    ["usageLedger", params] as const,
   modelPricing: ["modelPricing"] as const,
 };
 
@@ -226,6 +230,44 @@ export const useTenantUsage = (tenantId: number) => {
     queryFn: () => apiClient.getTenantUsage(tenantId),
     enabled: !!tenantId,
     refetchInterval: 60000, // Refresh every minute
+  });
+};
+
+export const useTenantUsageLedger = (
+  tenantId: number,
+  params?: {
+    days?: number;
+    page?: number;
+    limit?: number;
+    model?: string;
+    route?: string;
+    startDate?: string;
+    endDate?: string;
+  },
+) => {
+  return useQuery({
+    queryKey: queryKeys.tenantUsageLedger(tenantId, params),
+    queryFn: () => apiClient.getTenantUsageLedger(tenantId, params),
+    enabled: !!tenantId,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+};
+
+export const useUsageLedger = (params?: {
+  days?: number;
+  page?: number;
+  limit?: number;
+  model?: string;
+  route?: string;
+  tenant?: string;
+  tenantId?: number;
+  startDate?: string;
+  endDate?: string;
+}) => {
+  return useQuery({
+    queryKey: queryKeys.usageLedger(params),
+    queryFn: () => apiClient.getUsageLedger(params),
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 };
 
