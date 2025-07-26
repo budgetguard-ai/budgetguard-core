@@ -1,6 +1,6 @@
 <div align="center">
 
-# ![BudgetGuard](src/dashboard/src/assets/logo.png) BudgetGuard
+# <img src="src/dashboard/src/assets/logo.png" alt="BudgetGuard" width="32" height="32"> BudgetGuard
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
