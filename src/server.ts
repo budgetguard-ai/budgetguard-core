@@ -403,7 +403,6 @@ export async function buildServer() {
         return (
           url.startsWith("/admin") ||
           url.startsWith("/dashboard") ||
-          url === "/dashboard" ||
           url.startsWith("/docs") ||
           url === "/health"
         );
@@ -1275,7 +1274,8 @@ export async function buildServer() {
           type: "object",
           properties: {
             rateLimitPerMin: {
-              anyOf: [{ type: "number", minimum: 0 }, { type: "null" }],
+              type: ["number", "null"],
+              minimum: 0,
             },
           },
           required: ["rateLimitPerMin"],
