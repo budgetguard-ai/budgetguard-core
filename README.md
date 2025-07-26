@@ -1,7 +1,30 @@
-# BudgetGuard Core
+<div align="center">
+
+# <img src="src/dashboard/src/assets/logo.png" alt="BudgetGuard" width="32" height="32"> BudgetGuard
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 
 **Stop surprise AI bills. Ship with confidence.**
-BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway that enforces hard budgets, rate limits, and custom policy checks before any request reaches OpenAI.
+
+A **FinOps control plane for AI APIs**—a drop‑in API gateway that enforces hard budgets, rate limits, and custom policy checks before any request reaches AI providers.
+
+</div>
+
+## ✨ Key Features
+
+- 🛡️ **Hard Budget Enforcement** - Requests blocked the moment a tenant would exceed their limit
+- ⚡ **Rate Limiting** - Per-minute rate limits with tenant-aware controls  
+- 🏢 **Multi-tenant Ready** - Quotas, API keys, and budgets are tenant-scoped out of the box
+- 📊 **Complete Audit Trail** - Every call logged to immutable UsageLedger for audit and chargeback
+- 🔧 **Policy Engine** - Customizable OPA/Rego policies for advanced request filtering
+- 🌐 **Multi-provider Support** - OpenAI, Anthropic Claude, Google Gemini APIs
+- 🐳 **Self-hosted** - Docker-first deployment, keep your infrastructure and keys private
+- ⚡ **Low Latency** - <100ms added latency to your AI API calls
+- 📈 **Usage Analytics** - Built-in dashboard for monitoring and cost management
+- 🎨 **Modern Dashboard** - React-based UI with Material Design 3, light/dark themes
 
 ---
 
@@ -22,7 +45,7 @@ BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway
 1. **Clone & enter the repo**
 
    ```bash
-   git clone https://github.com/your-org/budgetguard-core.git
+   git clone https://github.com/budgetguard-ai/budgetguard-core.git
    cd budgetguard-core
    ```
 
@@ -45,9 +68,11 @@ BudgetGuard is the **FinOps control plane for OpenAI**—a drop‑in API gateway
 
    | Variable             | Description                                            |
    | -------------------- | ------------------------------------------------------ |
-   | `OPENAI_KEY`         | Your OpenAI API key                                    |
+   | `OPENAI_KEY`         | Your OpenAI API key (for GPT models)                  |
+   | `ANTHROPIC_API_KEY`  | Your Anthropic API key (for Claude models)            |
+   | `GOOGLE_API_KEY`     | Your Google API key (for Gemini models)               |
    | `ADMIN_API_KEY`      | Key for admin routes                                   |
-   | `MAX_REQS_PER_MIN`   | Default per‑tenant rate limit (use `0` for unlimited)                |
+   | `MAX_REQS_PER_MIN`   | Default per‑tenant rate limit (use `0` for unlimited) |
    | `DEFAULT_BUDGET_USD` | Default tenant monthly budget                          |
    | `BUDGET_PERIODS`     | Comma‑separated budget windows (e.g. `monthly,weekly`) |
 
@@ -90,13 +115,33 @@ curl -X POST http://localhost:3000/v1/chat/completions \
    -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-That’s it—you now have full budget & rate‑limit protection in front of OpenAI.
+That's it—you now have full budget & rate‑limit protection in front of your AI providers!
+
+## 🎛️ Management Dashboard
+
+BudgetGuard includes a modern React dashboard for easy management and monitoring:
+
+### Features
+- **System Overview** - Real-time health monitoring for database, Redis, and AI providers
+- **Tenant Management** - Create, edit, and manage tenants with budget controls
+- **Usage Analytics** - Track spending, request patterns, and model usage
+- **Budget Management** - Set and monitor budgets across different time periods
+- **API Key Management** - Generate and manage tenant API keys
+- **Material Design 3** - Modern, responsive UI with light/dark theme support
+
+### Access the Dashboard
+
+Once your server is running, visit: **http://localhost:3000/dashboard**
+
+![BudgetGuard Dashboard](docs/images/dashboard-overview.png)
+
+*More screenshots and detailed dashboard documentation: [src/dashboard/README.md](src/dashboard/README.md)*
 
 ---
 
 ## Running in Production
 
-1. **Set environment variables** (`OPENAI_KEY`, `ADMIN_API_KEY`, `MAX_REQS_PER_MIN`, etc.).
+1. **Set environment variables** (see [DEPLOYMENT.md](DEPLOYMENT.md) for complete guide)
 2. **Start Postgres, Redis, and the API**:
 
    ```bash
@@ -117,8 +162,8 @@ That’s it—you now have full budget & rate‑limit protection in front of Ope
 
 | Method | Path                   | Description                        |
 | ------ | ---------------------- | ---------------------------------- |
-| `POST` | `/v1/chat/completions` | Forward to OpenAI chat completions |
-| `POST` | `/v1/responses`        | Forward to OpenAI responses        |
+| `POST` | `/v1/chat/completions` | Forward to AI provider chat completions |
+| `POST` | `/v1/responses`        | Forward to AI provider responses   |
 | `GET`  | `/health`              | Liveness probe                     |
 
 Required headers: `X-Tenant-Id`, `X-API-Key` (or rely on server‑side `OPENAI_KEY`). Usage is logged in `UsageLedger`.
@@ -173,19 +218,29 @@ npm run migrate
 
 ## Roadmap
 
+* ✅ **Multi-provider support** (OpenAI, Anthropic, Google)
 * 🔜 **Stripe cost back‑filling** for end‑to‑end showback
 * 🔜 **Email / Slack budget alerts**
-* 🔜 **Plug‑ins for Anthropic, Mistral, Google AI, etc.**
+* 🔜 **Additional providers** (Mistral, Azure OpenAI, etc.)
 
 ---
 
+## 📚 Documentation
+
+- [**Quick Start Guide**](QUICKSTART.md) - Step-by-step tutorial for first-time users
+- [**Dashboard Guide**](src/dashboard/README.md) - Management dashboard setup and features
+- [**API Reference**](docs/api.md) - Complete API documentation with examples
+- [**Architecture Overview**](docs/ARCHITECTURE.md) - System design and data flow
+- [**Deployment Guide**](DEPLOYMENT.md) - Production deployment instructions
+- [**Contributing Guide**](CONTRIBUTING.md) - How to contribute to the project
+
 ## Contributing
 
-1. Fork & create a feature branch.
-2. Ensure `npm run test` passes.
-3. Open a PR—CI will lint, type‑check, and run the integration suite.
+1. Fork & create a feature branch
+2. Ensure `npm run test` passes
+3. Open a PR—CI will lint, type‑check, and run the integration suite
 
-We follow the Contributor Covenant code of conduct.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines. We follow the Contributor Covenant code of conduct.
 
 ---
 
@@ -195,5 +250,12 @@ Apache License 2.0. See `LICENSE`.
 
 ---
 
-> **BudgetGuard Core** — because your OpenAI bill shouldn’t keep you up at night.
-> Give us a ⭐ if this saved you one!
+<div align="center">
+
+**BudgetGuard** — because your AI bills shouldn't keep you up at night.
+
+Give us a ⭐ if this saved you money!
+
+[Getting Started](QUICKSTART.md) • [Documentation](docs/) • [API Reference](docs/api.md) • [Contributing](CONTRIBUTING.md)
+
+</div>

@@ -100,28 +100,154 @@ export async function buildServer() {
     openapi: {
       info: {
         title: "BudgetGuard API",
-        description: "Usage proxy and admin endpoints",
+        description:
+          "FinOps control plane for AI APIs - Budget enforcement, rate limiting, and usage tracking for OpenAI, Anthropic, and Google AI providers",
         version: "0.1.0",
+        contact: {
+          name: "BudgetGuard Support",
+          url: "https://github.com/budgetguard-ai/budgetguard-core",
+        },
+        license: {
+          name: "Apache 2.0",
+          url: "https://github.com/budgetguard-ai/budgetguard-core/blob/main/LICENSE",
+        },
       },
+      servers: [
+        {
+          url: "http://localhost:3000",
+          description: "Development server",
+        },
+        {
+          url: "https://your-budgetguard.com",
+          description: "Production server",
+        },
+      ],
+      tags: [
+        {
+          name: "AI Proxy",
+          description:
+            "AI API proxy endpoints with budget and rate limit enforcement",
+        },
+        {
+          name: "Health & Monitoring",
+          description: "Health checks and system monitoring endpoints",
+        },
+        {
+          name: "Tenant Management",
+          description: "Administrative endpoints for managing tenants",
+        },
+        {
+          name: "Budget Management",
+          description: "Budget configuration and monitoring",
+        },
+        {
+          name: "API Key Management",
+          description: "Tenant API key generation and management",
+        },
+        {
+          name: "Rate Limiting",
+          description: "Rate limit configuration and monitoring",
+        },
+        {
+          name: "Usage Analytics",
+          description: "Usage tracking, ledger, and analytics",
+        },
+        {
+          name: "Model Pricing",
+          description: "AI model pricing configuration",
+        },
+        {
+          name: "Provider Management",
+          description: "AI provider health and configuration",
+        },
+      ],
       components: {
         securitySchemes: {
           AdminApiKey: {
             type: "apiKey",
             in: "header",
             name: "X-Admin-Key",
-            description: "Admin API key from .env",
+            description: "Admin API key for administrative operations",
           },
           ApiKeyAuth: {
             type: "apiKey",
             in: "header",
             name: "X-API-Key",
-            description: "Tenant API key",
+            description: "Tenant-specific API key",
           },
           BearerAuth: {
             type: "http",
             scheme: "bearer",
-            bearerFormat: "APIKEY",
-            description: "Tenant API key via Authorization header",
+            bearerFormat: "JWT",
+            description: "AI provider API key (OpenAI, Anthropic, Google)",
+          },
+          OpenAIKey: {
+            type: "apiKey",
+            in: "header",
+            name: "X-OpenAI-Key",
+            description: "OpenAI API key for GPT models",
+          },
+          AnthropicKey: {
+            type: "apiKey",
+            in: "header",
+            name: "X-Anthropic-Key",
+            description: "Anthropic API key for Claude models",
+          },
+          GoogleKey: {
+            type: "apiKey",
+            in: "header",
+            name: "X-Google-API-Key",
+            description: "Google API key for Gemini models",
+          },
+        },
+        schemas: {
+          Error: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string", example: "BUDGET_EXCEEDED" },
+                  message: {
+                    type: "string",
+                    example: "Monthly budget exceeded",
+                  },
+                  details: { type: "object" },
+                  timestamp: { type: "string", format: "date-time" },
+                  requestId: { type: "string" },
+                },
+              },
+            },
+          },
+          ChatMessage: {
+            type: "object",
+            properties: {
+              role: { type: "string", enum: ["user", "assistant", "system"] },
+              content: { type: "string" },
+            },
+            required: ["role", "content"],
+          },
+          Tenant: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              description: { type: "string" },
+              rateLimitPerMin: { type: "number" },
+              createdAt: { type: "string", format: "date-time" },
+              updatedAt: { type: "string", format: "date-time" },
+            },
+          },
+          Budget: {
+            type: "object",
+            properties: {
+              period: { type: "string", enum: ["daily", "monthly", "custom"] },
+              limitUsd: { type: "number" },
+              usedUsd: { type: "number" },
+              remainingUsd: { type: "number" },
+              startDate: { type: "string", format: "date-time" },
+              endDate: { type: "string", format: "date-time" },
+            },
           },
         },
       },
@@ -168,30 +294,40 @@ export async function buildServer() {
   try {
     await fsPromises.access(dashboardDistPath);
     // Manually handle dashboard assets (JS, CSS, etc.)
-    app.get("/dashboard/assets/*", async (req, reply) => {
-      const assetPath = req.url.replace("/dashboard/", "");
-      const fullPath = path.join(dashboardDistPath, assetPath);
+    app.get(
+      "/dashboard/assets/*",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Serve dashboard static assets",
+          description: "Static assets (JS, CSS, images) for the dashboard",
+        },
+      },
+      async (req, reply) => {
+        const assetPath = req.url.replace("/dashboard/", "");
+        const fullPath = path.join(dashboardDistPath, assetPath);
 
-      try {
-        await fsPromises.access(fullPath);
-        const content = await fsPromises.readFile(fullPath);
+        try {
+          await fsPromises.access(fullPath);
+          const content = await fsPromises.readFile(fullPath);
 
-        // Set appropriate content type
-        if (fullPath.endsWith(".js")) {
-          reply.type("application/javascript");
-        } else if (fullPath.endsWith(".css")) {
-          reply.type("text/css");
-        } else if (fullPath.endsWith(".png")) {
-          reply.type("image/png");
-        } else if (fullPath.endsWith(".svg")) {
-          reply.type("image/svg+xml");
+          // Set appropriate content type
+          if (fullPath.endsWith(".js")) {
+            reply.type("application/javascript");
+          } else if (fullPath.endsWith(".css")) {
+            reply.type("text/css");
+          } else if (fullPath.endsWith(".png")) {
+            reply.type("image/png");
+          } else if (fullPath.endsWith(".svg")) {
+            reply.type("image/svg+xml");
+          }
+
+          return reply.send(content);
+        } catch {
+          return reply.code(404).send({ error: "Asset not found" });
         }
-
-        return reply.send(content);
-      } catch {
-        return reply.code(404).send({ error: "Asset not found" });
-      }
-    });
+      },
+    );
 
     // Serve dashboard SPA for main route and all subroutes
     const serveDashboardSPA = async (
@@ -207,25 +343,55 @@ export async function buildServer() {
       }
     };
 
-    app.get("/dashboard", serveDashboardSPA);
-    app.get("/dashboard/*", async (req, reply) => {
-      // Skip asset requests - they're handled above
-      if (req.url.includes("/assets/")) {
-        return;
-      }
+    app.get(
+      "/dashboard",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard SPA entry point",
+          description: "Main dashboard single-page application",
+        },
+      },
+      serveDashboardSPA,
+    );
+    app.get(
+      "/dashboard/*",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard SPA routes",
+          description: "All dashboard routes (SPA routing)",
+        },
+      },
+      async (req, reply) => {
+        // Skip asset requests - they're handled above
+        if (req.url.includes("/assets/")) {
+          return;
+        }
 
-      // Serve SPA for all other dashboard routes
-      await serveDashboardSPA(req, reply);
-    });
+        // Serve SPA for all other dashboard routes
+        await serveDashboardSPA(req, reply);
+      },
+    );
   } catch {
     // Dashboard dist doesn't exist
     // If dashboard not built, show helpful message
-    app.get("/dashboard", async (req, reply) => {
-      reply.code(404).send({
-        error: "Dashboard not built",
-        message: "Run 'npm run build:dashboard' to build the dashboard first",
-      });
-    });
+    app.get(
+      "/dashboard",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard not built message",
+          description: "Error message when dashboard is not built",
+        },
+      },
+      async (req, reply) => {
+        reply.code(404).send({
+          error: "Dashboard not built",
+          message: "Run 'npm run build:dashboard' to build the dashboard first",
+        });
+      },
+    );
   }
 
   let prisma: PrismaClient | undefined;
@@ -424,6 +590,10 @@ export async function buildServer() {
     "/health",
     {
       schema: {
+        tags: ["Health & Monitoring"],
+        summary: "Health check endpoint",
+        description:
+          "Returns the health status of BudgetGuard and its dependencies",
         response: {
           200: {
             type: "object",
@@ -532,6 +702,10 @@ export async function buildServer() {
     "/v1/chat/completions",
     {
       schema: {
+        tags: ["AI Proxy"],
+        summary: "Chat completions with budget enforcement",
+        description:
+          "Proxy chat completion requests to AI providers (OpenAI, Anthropic, Google) with budget and rate limit enforcement",
         body: {
           type: "object",
           properties: {
@@ -717,6 +891,10 @@ export async function buildServer() {
     "/v1/responses",
     {
       schema: {
+        tags: ["AI Proxy"],
+        summary: "Legacy responses endpoint",
+        description:
+          "Legacy endpoint for simple text responses with budget enforcement",
         body: {
           type: "object",
           properties: {
@@ -907,6 +1085,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Tenant Management"],
+        summary: "Create a new tenant",
+        description:
+          "Create a new tenant with optional budget and rate limit configuration",
         body: {
           type: "object",
           properties: { name: { type: "string" } },
@@ -930,7 +1112,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -958,6 +1139,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Tenant Management"],
+        summary: "List all tenants",
+        description: "Retrieve a list of all tenants in the system",
         response: {
           200: {
             type: "array",
@@ -1003,6 +1187,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Tenant Management"],
+        summary: "Get tenant by ID",
+        description: "Retrieve detailed information about a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1026,7 +1213,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1046,6 +1232,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Tenant Management"],
+        summary: "Update tenant",
+        description: "Update tenant information such as name or rate limits",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1080,7 +1269,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1138,6 +1326,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Tenant Management"],
+        summary: "Delete tenant",
+        description: "Delete a tenant and all associated data",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1158,7 +1349,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1227,6 +1417,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Rate Limiting"],
+        summary: "Get tenant rate limit",
+        description:
+          "Retrieve the current rate limit configuration for a tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1247,7 +1441,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1265,6 +1458,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Rate Limiting"],
+        summary: "Set tenant rate limit",
+        description:
+          "Configure the rate limit for a specific tenant (requests per minute)",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1295,7 +1492,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1340,6 +1536,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Budget Management"],
+        summary: "Set tenant budget",
+        description: "Configure budget limits for a specific tenant and period",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1379,7 +1578,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1485,6 +1683,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Budget Management"],
+        summary: "Get tenant budgets",
+        description: "Retrieve all budget configurations for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1505,7 +1706,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1580,6 +1780,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["API Key Management"],
+        summary: "Generate tenant API key",
+        description: "Generate a new API key for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1605,7 +1808,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1632,6 +1834,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["API Key Management"],
+        summary: "List tenant API keys",
+        description: "Retrieve all API keys for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1660,7 +1865,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1684,6 +1888,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["API Key Management"],
+        summary: "Delete API key",
+        description: "Delete a specific API key by ID",
         params: {
           type: "object",
           properties: { id: { type: "string" } },
@@ -1701,7 +1908,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1720,6 +1926,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Usage Analytics"],
+        summary: "Get tenant usage summary",
+        description:
+          "Retrieve usage summary and statistics for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1737,7 +1947,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1772,6 +1981,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Usage Analytics"],
+        summary: "Get tenant usage history",
+        description:
+          "Retrieve historical usage data for a specific tenant with optional date filtering",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1804,7 +2017,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1869,6 +2081,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Usage Analytics"],
+        summary: "Get tenant model usage breakdown",
+        description: "Detailed usage statistics by model for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1902,7 +2117,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -1967,6 +2181,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Usage Analytics"],
+        summary: "Get tenant usage ledger",
+        description: "Detailed usage ledger entries for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2135,6 +2352,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Usage Analytics"],
+        summary: "Get usage ledger entries",
+        description: "Retrieve usage ledger entries across all tenants",
         querystring: {
           type: "object",
           properties: {
@@ -2307,6 +2527,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Budget Management"],
+        summary: "Update budget",
+        description: "Update an existing budget by ID",
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -2331,7 +2554,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2389,6 +2611,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Budget Management"],
+        summary: "Delete budget",
+        description: "Delete a budget by ID",
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -2409,7 +2634,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2436,6 +2660,10 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Model Pricing"],
+        summary: "List model pricing",
+        description:
+          "Retrieve pricing information for all configured AI models",
         response: {
           200: {
             type: "array",
@@ -2464,7 +2692,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (_req, reply) => {
@@ -2479,6 +2706,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Model Pricing"],
+        summary: "Add model pricing",
+        description: "Add pricing configuration for a new AI model",
         body: {
           type: "object",
           properties: {
@@ -2517,7 +2747,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2555,6 +2784,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Model Pricing"],
+        summary: "Update model pricing",
+        description: "Update pricing for a specific model",
         params: {
           type: "object",
           properties: { idOrModel: { type: "string" } },
@@ -2584,7 +2816,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2616,6 +2847,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Provider Management"],
+        summary: "Get all providers status",
+        description: "Health status of all AI providers",
         response: {
           200: {
             type: "object",
@@ -2667,7 +2901,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2753,6 +2986,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Provider Management"],
+        summary: "Get provider health",
+        description: "Health check for a specific AI provider",
         params: {
           type: "object",
           properties: {
@@ -2785,7 +3021,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
@@ -2851,6 +3086,9 @@ export async function buildServer() {
     {
       preHandler: adminAuth,
       schema: {
+        tags: ["Provider Management"],
+        summary: "Test provider with API key",
+        description: "Test a specific AI provider with provided API key",
         params: {
           type: "object",
           properties: {
@@ -2889,7 +3127,6 @@ export async function buildServer() {
             description: "Admin API key from .env",
           },
         ],
-        security: [{ AdminApiKey: [] }],
       },
     },
     async (req, reply) => {
