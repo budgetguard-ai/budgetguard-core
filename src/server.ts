@@ -100,7 +100,8 @@ export async function buildServer() {
     openapi: {
       info: {
         title: "BudgetGuard API",
-        description: "FinOps control plane for AI APIs - Budget enforcement, rate limiting, and usage tracking for OpenAI, Anthropic, and Google AI providers",
+        description:
+          "FinOps control plane for AI APIs - Budget enforcement, rate limiting, and usage tracking for OpenAI, Anthropic, and Google AI providers",
         version: "0.1.0",
         contact: {
           name: "BudgetGuard Support",
@@ -124,7 +125,8 @@ export async function buildServer() {
       tags: [
         {
           name: "AI Proxy",
-          description: "AI API proxy endpoints with budget and rate limit enforcement",
+          description:
+            "AI API proxy endpoints with budget and rate limit enforcement",
         },
         {
           name: "Health & Monitoring",
@@ -206,7 +208,10 @@ export async function buildServer() {
                 type: "object",
                 properties: {
                   code: { type: "string", example: "BUDGET_EXCEEDED" },
-                  message: { type: "string", example: "Monthly budget exceeded" },
+                  message: {
+                    type: "string",
+                    example: "Monthly budget exceeded",
+                  },
                   details: { type: "object" },
                   timestamp: { type: "string", format: "date-time" },
                   requestId: { type: "string" },
@@ -289,36 +294,40 @@ export async function buildServer() {
   try {
     await fsPromises.access(dashboardDistPath);
     // Manually handle dashboard assets (JS, CSS, etc.)
-    app.get("/dashboard/assets/*", {
-      schema: {
-        tags: ["Dashboard"],
-        summary: "Serve dashboard static assets",
-        description: "Static assets (JS, CSS, images) for the dashboard"
-      }
-    }, async (req, reply) => {
-      const assetPath = req.url.replace("/dashboard/", "");
-      const fullPath = path.join(dashboardDistPath, assetPath);
+    app.get(
+      "/dashboard/assets/*",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Serve dashboard static assets",
+          description: "Static assets (JS, CSS, images) for the dashboard",
+        },
+      },
+      async (req, reply) => {
+        const assetPath = req.url.replace("/dashboard/", "");
+        const fullPath = path.join(dashboardDistPath, assetPath);
 
-      try {
-        await fsPromises.access(fullPath);
-        const content = await fsPromises.readFile(fullPath);
+        try {
+          await fsPromises.access(fullPath);
+          const content = await fsPromises.readFile(fullPath);
 
-        // Set appropriate content type
-        if (fullPath.endsWith(".js")) {
-          reply.type("application/javascript");
-        } else if (fullPath.endsWith(".css")) {
-          reply.type("text/css");
-        } else if (fullPath.endsWith(".png")) {
-          reply.type("image/png");
-        } else if (fullPath.endsWith(".svg")) {
-          reply.type("image/svg+xml");
+          // Set appropriate content type
+          if (fullPath.endsWith(".js")) {
+            reply.type("application/javascript");
+          } else if (fullPath.endsWith(".css")) {
+            reply.type("text/css");
+          } else if (fullPath.endsWith(".png")) {
+            reply.type("image/png");
+          } else if (fullPath.endsWith(".svg")) {
+            reply.type("image/svg+xml");
+          }
+
+          return reply.send(content);
+        } catch {
+          return reply.code(404).send({ error: "Asset not found" });
         }
-
-        return reply.send(content);
-      } catch {
-        return reply.code(404).send({ error: "Asset not found" });
-      }
-    });
+      },
+    );
 
     // Serve dashboard SPA for main route and all subroutes
     const serveDashboardSPA = async (
@@ -334,43 +343,55 @@ export async function buildServer() {
       }
     };
 
-    app.get("/dashboard", {
-      schema: {
-        tags: ["Dashboard"],
-        summary: "Dashboard SPA entry point",
-        description: "Main dashboard single-page application"
-      }
-    }, serveDashboardSPA);
-    app.get("/dashboard/*", {
-      schema: {
-        tags: ["Dashboard"],
-        summary: "Dashboard SPA routes",
-        description: "All dashboard routes (SPA routing)"
-      }
-    }, async (req, reply) => {
-      // Skip asset requests - they're handled above
-      if (req.url.includes("/assets/")) {
-        return;
-      }
+    app.get(
+      "/dashboard",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard SPA entry point",
+          description: "Main dashboard single-page application",
+        },
+      },
+      serveDashboardSPA,
+    );
+    app.get(
+      "/dashboard/*",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard SPA routes",
+          description: "All dashboard routes (SPA routing)",
+        },
+      },
+      async (req, reply) => {
+        // Skip asset requests - they're handled above
+        if (req.url.includes("/assets/")) {
+          return;
+        }
 
-      // Serve SPA for all other dashboard routes
-      await serveDashboardSPA(req, reply);
-    });
+        // Serve SPA for all other dashboard routes
+        await serveDashboardSPA(req, reply);
+      },
+    );
   } catch {
     // Dashboard dist doesn't exist
     // If dashboard not built, show helpful message
-    app.get("/dashboard", {
-      schema: {
-        tags: ["Dashboard"],
-        summary: "Dashboard not built message",
-        description: "Error message when dashboard is not built"
-      }
-    }, async (req, reply) => {
-      reply.code(404).send({
-        error: "Dashboard not built",
-        message: "Run 'npm run build:dashboard' to build the dashboard first",
-      });
-    });
+    app.get(
+      "/dashboard",
+      {
+        schema: {
+          tags: ["Dashboard"],
+          summary: "Dashboard not built message",
+          description: "Error message when dashboard is not built",
+        },
+      },
+      async (req, reply) => {
+        reply.code(404).send({
+          error: "Dashboard not built",
+          message: "Run 'npm run build:dashboard' to build the dashboard first",
+        });
+      },
+    );
   }
 
   let prisma: PrismaClient | undefined;
@@ -571,7 +592,8 @@ export async function buildServer() {
       schema: {
         tags: ["Health & Monitoring"],
         summary: "Health check endpoint",
-        description: "Returns the health status of BudgetGuard and its dependencies",
+        description:
+          "Returns the health status of BudgetGuard and its dependencies",
         response: {
           200: {
             type: "object",
@@ -682,7 +704,8 @@ export async function buildServer() {
       schema: {
         tags: ["AI Proxy"],
         summary: "Chat completions with budget enforcement",
-        description: "Proxy chat completion requests to AI providers (OpenAI, Anthropic, Google) with budget and rate limit enforcement",
+        description:
+          "Proxy chat completion requests to AI providers (OpenAI, Anthropic, Google) with budget and rate limit enforcement",
         body: {
           type: "object",
           properties: {
@@ -870,7 +893,8 @@ export async function buildServer() {
       schema: {
         tags: ["AI Proxy"],
         summary: "Legacy responses endpoint",
-        description: "Legacy endpoint for simple text responses with budget enforcement",
+        description:
+          "Legacy endpoint for simple text responses with budget enforcement",
         body: {
           type: "object",
           properties: {
@@ -1063,7 +1087,8 @@ export async function buildServer() {
       schema: {
         tags: ["Tenant Management"],
         summary: "Create a new tenant",
-        description: "Create a new tenant with optional budget and rate limit configuration",
+        description:
+          "Create a new tenant with optional budget and rate limit configuration",
         body: {
           type: "object",
           properties: { name: { type: "string" } },
@@ -1394,7 +1419,8 @@ export async function buildServer() {
       schema: {
         tags: ["Rate Limiting"],
         summary: "Get tenant rate limit",
-        description: "Retrieve the current rate limit configuration for a tenant",
+        description:
+          "Retrieve the current rate limit configuration for a tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1434,7 +1460,8 @@ export async function buildServer() {
       schema: {
         tags: ["Rate Limiting"],
         summary: "Set tenant rate limit",
-        description: "Configure the rate limit for a specific tenant (requests per minute)",
+        description:
+          "Configure the rate limit for a specific tenant (requests per minute)",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1901,7 +1928,8 @@ export async function buildServer() {
       schema: {
         tags: ["Usage Analytics"],
         summary: "Get tenant usage summary",
-        description: "Retrieve usage summary and statistics for a specific tenant",
+        description:
+          "Retrieve usage summary and statistics for a specific tenant",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1955,7 +1983,8 @@ export async function buildServer() {
       schema: {
         tags: ["Usage Analytics"],
         summary: "Get tenant usage history",
-        description: "Retrieve historical usage data for a specific tenant with optional date filtering",
+        description:
+          "Retrieve historical usage data for a specific tenant with optional date filtering",
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2633,7 +2662,8 @@ export async function buildServer() {
       schema: {
         tags: ["Model Pricing"],
         summary: "List model pricing",
-        description: "Retrieve pricing information for all configured AI models",
+        description:
+          "Retrieve pricing information for all configured AI models",
         response: {
           200: {
             type: "array",
