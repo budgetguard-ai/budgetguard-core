@@ -39,7 +39,8 @@ model Tenant {
 
 model ApiKey {
   id         Int       @id @default(autoincrement())
-  key        String    @unique
+  keyHash    String    @unique
+  keyPrefix  String
   tenantId   Int
   isActive   Boolean   @default(true)
   createdAt  DateTime  @default(now())
@@ -47,6 +48,7 @@ model ApiKey {
   tenant     Tenant    @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
+  @@index([keyPrefix])
 }
 
 model Budget {

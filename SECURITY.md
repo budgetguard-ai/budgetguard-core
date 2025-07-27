@@ -7,14 +7,16 @@ BudgetGuard handles sensitive data including API keys, usage data, and financial
 ## 🛡️ Security Features
 
 ### Authentication & Authorization
-- **Admin API Key Protection** - All admin endpoints require `X-Admin-Key` header
-- **Tenant API Keys** - Per-tenant API keys for client authentication
+- **Admin API Key Protection** - All admin endpoints require `X-Admin-Key` header (stored as environment variable)
+- **Tenant API Keys** - Per-tenant API keys for client authentication, hashed with bcrypt (cost factor 12)
+- **Key Prefix Indexing** - 8-character prefixes enable efficient key lookup before hash comparison
 - **Request Validation** - Input validation on all endpoints
 - **Rate Limiting** - Per-tenant rate limiting to prevent abuse
 
 ### Data Protection
-- **API Key Encryption** - API keys are hashed before storage
-- **Audit Logging** - All requests logged to immutable `UsageLedger`
+- **Tenant API Key Hashing** - Tenant API keys stored as bcrypt hashes (never retrievable as plaintext)
+- **Admin Key Environment Storage** - Admin API key stored securely in environment variables
+- **Audit Logging** - All requests logged to immutable `UsageLedger` with API key IDs (not keys)
 - **Environment Isolation** - Secrets managed via environment variables
 - **Database Security** - Parameterized queries prevent SQL injection
 
@@ -89,25 +91,38 @@ BudgetGuard handles sensitive data including API keys, usage data, and financial
 ### For Users
 
 1. **API Key Security**
-   - Store API keys securely (environment variables, secrets manager)
-   - Rotate API keys regularly
-   - Use different keys for different environments
-   - Never log API keys
+   - **Tenant API Keys**: Created via admin API, displayed only once (hashed in database)
+   - **Key Rotation**: Use admin endpoints to create new keys and deactivate old ones
+   - **Storage**: Store API keys securely (environment variables, secrets manager)
+   - **Environment Separation**: Use different keys for different environments
+   - **Logging**: Never log API keys in application logs or error messages
 
 2. **Network Security**
    - Use HTTPS for all API calls
    - Implement proper firewall rules
    - Monitor API usage for anomalies
 
-3. **Access Control**
+3. **API Key Rotation**
    ```bash
-   # Example secure API call
+   # Create new tenant API key via admin API
+   curl -X POST https://your-budgetguard.com/admin/tenant/1/apikeys \
+     -H "X-Admin-Key: $ADMIN_API_KEY" \
+     -H "Content-Type: application/json"
+   
+   # Deactivate old API key
+   curl -X DELETE https://your-budgetguard.com/admin/apikey/OLD_KEY_ID \
+     -H "X-Admin-Key: $ADMIN_API_KEY"
+   ```
+
+4. **Access Control**
+   ```bash
+   # Example secure API call with tenant key
    curl -X POST https://your-budgetguard.com/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $OPENAI_KEY" \
      -H "X-Tenant-Id: your-tenant" \
      -H "X-API-Key: $TENANT_API_KEY" \
-     -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"Hello"}]}'
+     -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
    ```
 
 ## 🚨 Vulnerability Reporting
@@ -155,13 +170,17 @@ We take security vulnerabilities seriously. Please follow responsible disclosure
    ```bash
    # Required security settings
    NODE_ENV=production
-   ADMIN_API_KEY="secure-random-key-here"
+   
+   # Admin API key (plaintext, stored in environment)
+   ADMIN_API_KEY="secure-random-key-here"  # Use: openssl rand -hex 32
    
    # Database security
    DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
    
    # Redis security (if exposed)
    REDIS_URL="redis://user:pass@host:6379"
+   
+   # Note: Tenant API keys are managed via admin API and stored hashed in database
    ```
 
 2. **Network Security**
@@ -271,8 +290,15 @@ Key metrics to monitor:
 
 1. **AI Provider Security** - Security depends on upstream AI providers
 2. **Network Security** - Requires proper network configuration
-3. **Key Management** - Users responsible for secure key storage
-4. **Rate Limiting** - Can be bypassed with multiple tenants
+3. **Admin Key Management** - Admin API key stored in plaintext environment variable
+4. **Key Management** - Users responsible for secure key storage
+5. **Rate Limiting** - Can be bypassed with multiple tenants
+
+### Security Model
+
+**Hybrid Key Management Approach:**
+- **Tenant API Keys**: Hashed with bcrypt, stored in database, rotated via admin API
+- **Admin API Key**: Stored as environment variable, manually managed, full system access
 
 ### Assumptions
 

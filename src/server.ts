@@ -10,6 +10,7 @@ import { createClient } from "redis";
 import dotenv from "dotenv";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
+import bcrypt from "bcrypt";
 import { countTokensAndCost } from "./token.js";
 import {
   ledgerKey,
@@ -27,6 +28,7 @@ import {
   DatabaseProviderSelector,
   type ProviderType,
 } from "./provider-selector.js";
+import { authenticateApiKey } from "./auth-utils.js";
 
 dotenv.config();
 
@@ -768,29 +770,23 @@ export async function buildServer() {
         supplied = req.headers["x-api-key"] as string;
       }
       if (supplied) {
-        const keyRec = await prisma.apiKey.findFirst({
-          where: { key: supplied, isActive: true },
-        });
-        if (!keyRec) {
+        const keyAuth = await authenticateApiKey(supplied, prisma);
+        if (!keyAuth) {
           return reply.code(401).send({ error: "Unauthorized" });
         }
         const tenantRec = await prisma.tenant.findUnique({
-          where: { id: keyRec.tenantId },
+          where: { id: keyAuth.tenantId },
         });
         if (!tenantRec) {
           return reply.code(401).send({ error: "Unauthorized" });
         }
         tenant = tenantRec.name;
         (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
-        await prisma.apiKey.update({
-          where: { id: keyRec.id },
-          data: { lastUsedAt: new Date() },
-        });
         await prisma.auditLog
           .create({
             data: {
-              tenantId: keyRec.tenantId,
-              actor: `apiKey:${keyRec.id}`,
+              tenantId: keyAuth.tenantId,
+              actor: `apiKey:${keyAuth.id}`,
               event: "api_key_used",
               details: req.routeOptions.url ?? req.url,
             },
@@ -955,29 +951,23 @@ export async function buildServer() {
         supplied = req.headers["x-api-key"] as string;
       }
       if (supplied) {
-        const keyRec = await prisma.apiKey.findFirst({
-          where: { key: supplied, isActive: true },
-        });
-        if (!keyRec) {
+        const keyAuth = await authenticateApiKey(supplied, prisma);
+        if (!keyAuth) {
           return reply.code(401).send({ error: "Unauthorized" });
         }
         const tenantRec = await prisma.tenant.findUnique({
-          where: { id: keyRec.tenantId },
+          where: { id: keyAuth.tenantId },
         });
         if (!tenantRec) {
           return reply.code(401).send({ error: "Unauthorized" });
         }
         tenant = tenantRec.name;
         (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
-        await prisma.apiKey.update({
-          where: { id: keyRec.id },
-          data: { lastUsedAt: new Date() },
-        });
         await prisma.auditLog
           .create({
             data: {
-              tenantId: keyRec.tenantId,
-              actor: `apiKey:${keyRec.id}`,
+              tenantId: keyAuth.tenantId,
+              actor: `apiKey:${keyAuth.id}`,
               event: "api_key_used",
               details: req.routeOptions.url ?? req.url,
             },
@@ -1817,12 +1807,15 @@ export async function buildServer() {
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
       const key = randomBytes(32).toString("hex");
+      const keyHash = await bcrypt.hash(key, 12);
+      const keyPrefix = key.substring(0, 8);
       const rec = await prisma.apiKey.create({
-        data: { key, tenantId: id, isActive: true },
+        data: { keyHash, keyPrefix, tenantId: id, isActive: true },
       });
       return reply.send({
         id: rec.id,
-        key: rec.key,
+        key: key, // Return the plaintext key only once
+        keyPrefix: rec.keyPrefix,
         createdAt: rec.createdAt,
         isActive: rec.isActive,
       });
