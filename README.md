@@ -227,7 +227,6 @@ npm run migrate
 
 ## 📚 Documentation
 
-- [**Quick Start Guide**](QUICKSTART.md) - Step-by-step tutorial for first-time users
 - [**Dashboard Guide**](src/dashboard/README.md) - Management dashboard setup and features
 - [**API Reference**](docs/api.md) - Complete API documentation with examples
 - [**Architecture Overview**](docs/ARCHITECTURE.md) - System design and data flow
@@ -256,6 +255,6 @@ Apache License 2.0. See `LICENSE`.
 
 Give us a ⭐ if this saved you money!
 
-[Getting Started](QUICKSTART.md) • [Documentation](docs/) • [API Reference](docs/api.md) • [Contributing](CONTRIBUTING.md)
+[Documentation](docs/) • [API Reference](docs/api.md) • [Contributing](CONTRIBUTING.md)
 
 </div>
