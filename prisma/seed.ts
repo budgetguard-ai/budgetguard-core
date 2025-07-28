@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import dotenv from "dotenv";
 import { randomBytes } from "crypto";
+import bcrypt from "bcrypt";
 
 dotenv.config();
 
@@ -22,13 +23,30 @@ async function main() {
   }
 
   const apiKey = process.env.DEFAULT_API_KEY || randomBytes(16).toString("hex");
-  await prisma.apiKey.upsert({
-    where: { key: apiKey },
-    update: {},
-    create: { key: apiKey, tenantId: tenant.id },
+  const keyHash = await bcrypt.hash(apiKey, 12);
+  const keyPrefix = apiKey.substring(0, 8);
+
+  // Check if API key already exists by prefix (since we can't search by plaintext anymore)
+  const existingKey = await prisma.apiKey.findFirst({
+    where: {
+      keyPrefix: keyPrefix,
+      tenantId: tenant.id,
+      isActive: true,
+    },
   });
-  if (!process.env.DEFAULT_API_KEY) {
+
+  if (!existingKey) {
+    await prisma.apiKey.create({
+      data: {
+        keyHash: keyHash,
+        keyPrefix: keyPrefix,
+        tenantId: tenant.id,
+        isActive: true,
+      },
+    });
     console.log(`Created API key: ${apiKey}`);
+  } else {
+    console.log(`API key with prefix ${keyPrefix} already exists`);
   }
 
   const budgets: Array<{ period: string; amountUsd: string }> = [];
