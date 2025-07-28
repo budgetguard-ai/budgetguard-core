@@ -22,20 +22,21 @@ async function main() {
     });
   }
 
-  const apiKey = process.env.DEFAULT_API_KEY || randomBytes(16).toString("hex");
-  const keyHash = await bcrypt.hash(apiKey, 12);
-  const keyPrefix = apiKey.substring(0, 8);
-
-  // Check if API key already exists by prefix (since we can't search by plaintext anymore)
-  const existingKey = await prisma.apiKey.findFirst({
+  // Check if tenant already has any API keys (prevents duplicates)
+  const existingKeys = await prisma.apiKey.findMany({
     where: {
-      keyPrefix: keyPrefix,
       tenantId: tenant.id,
       isActive: true,
     },
   });
 
-  if (!existingKey) {
+  if (existingKeys.length === 0) {
+    // Only create a new API key if tenant has no existing keys
+    const apiKey =
+      process.env.DEFAULT_API_KEY || randomBytes(16).toString("hex");
+    const keyHash = await bcrypt.hash(apiKey, 12);
+    const keyPrefix = apiKey.substring(0, 8);
+
     await prisma.apiKey.create({
       data: {
         keyHash: keyHash,
@@ -46,7 +47,9 @@ async function main() {
     });
     console.log(`Created API key: ${apiKey}`);
   } else {
-    console.log(`API key with prefix ${keyPrefix} already exists`);
+    console.log(
+      `Tenant already has ${existingKeys.length} API key(s), skipping creation`,
+    );
   }
 
   const budgets: Array<{ period: string; amountUsd: string }> = [];
