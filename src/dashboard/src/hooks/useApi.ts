@@ -300,6 +300,14 @@ export const useDeleteApiKey = () => {
     mutationFn: (keyId: number) => apiClient.deleteApiKey(keyId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.tenants });
+      // Invalidate all tenant API keys to update the status immediately
+      void queryClient.invalidateQueries({
+        predicate: (query) => {
+          return (
+            query.queryKey[0] === "tenant" && query.queryKey[2] === "apiKeys"
+          );
+        },
+      });
     },
   });
 };

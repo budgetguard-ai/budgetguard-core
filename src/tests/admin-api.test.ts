@@ -64,7 +64,8 @@ vi.mock("@prisma/client", () => {
   }
   interface ApiKey {
     id: number;
-    key: string;
+    keyHash: string;
+    keyPrefix: string;
     tenantId: number;
     isActive: boolean;
     createdAt?: Date;

@@ -49,6 +49,10 @@ const ManageApiKeysDialog: React.FC<ManageApiKeysDialogProps> = ({
 }) => {
   const [showKeys, setShowKeys] = useState<Record<number, boolean>>({});
   const [copiedKey, setCopiedKey] = useState<number | null>(null);
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<{
+    id: number;
+    key: string;
+  } | null>(null);
 
   const {
     data: apiKeys = [],
@@ -63,7 +67,11 @@ const ManageApiKeysDialog: React.FC<ManageApiKeysDialogProps> = ({
     if (!tenant) return;
 
     try {
-      await createApiKeyMutation.mutateAsync(tenant.id);
+      const newApiKey = await createApiKeyMutation.mutateAsync(tenant.id);
+      // Show the newly created key to the user
+      setNewlyCreatedKey({ id: newApiKey.id, key: newApiKey.key || "" });
+      // Auto-show the new key
+      setShowKeys((prev) => ({ ...prev, [newApiKey.id]: true }));
     } catch (error) {
       console.error("Failed to create API key:", error);
     }
@@ -143,6 +151,71 @@ const ManageApiKeysDialog: React.FC<ManageApiKeysDialogProps> = ({
         {createApiKeyMutation.error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             Failed to create API key: {createApiKeyMutation.error.message}
+          </Alert>
+        )}
+
+        {newlyCreatedKey && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>
+              🎉 API Key Created Successfully!
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              <strong>Important:</strong> This is the only time you'll see this
+              key. Please copy and store it securely.
+            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+              <TextField
+                value={newlyCreatedKey.key}
+                InputProps={{
+                  readOnly: true,
+                  sx: {
+                    fontFamily: "monospace",
+                    fontSize: "0.875rem",
+                    "& input": {
+                      cursor: "text",
+                      userSelect: "all",
+                    },
+                  },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip
+                        title={
+                          copiedKey === newlyCreatedKey.id
+                            ? "Copied!"
+                            : "Copy key"
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={() =>
+                            handleCopyKey(
+                              newlyCreatedKey.id,
+                              newlyCreatedKey.key,
+                            )
+                          }
+                          color={
+                            copiedKey === newlyCreatedKey.id
+                              ? "success"
+                              : "primary"
+                          }
+                        >
+                          <CopyIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                }}
+                size="small"
+                fullWidth
+              />
+            </Box>
+            <Button
+              size="small"
+              onClick={() => setNewlyCreatedKey(null)}
+              sx={{ mt: 1 }}
+            >
+              Dismiss
+            </Button>
           </Alert>
         )}
 

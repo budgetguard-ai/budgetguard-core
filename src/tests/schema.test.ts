@@ -93,7 +93,12 @@ describe("schema relations", () => {
   it("creates and links records", async () => {
     const tenant = await prisma.tenant.create({ data: { name: "t1" } });
     const key = await prisma.apiKey.create({
-      data: { key: "abc", tenantId: tenant.id, isActive: true },
+      data: {
+        keyHash: "$2b$12$abcdefghijklmnopqrstuvwxyz",
+        keyPrefix: "abcdefgh",
+        tenantId: tenant.id,
+        isActive: true,
+      },
     });
     const budget = await prisma.budget.create({
       data: { tenantId: tenant.id, period: "monthly", amountUsd: "10" },
