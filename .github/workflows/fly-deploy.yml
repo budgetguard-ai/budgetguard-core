@@ -1,10 +1,20 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+# Fly.io Deployment Example
+# 
+# This workflow is disabled by default for the OSS project.
+# To enable it for your own deployment:
+# 1. Create a Fly.io account and app: https://fly.io/docs/getting-started/
+# 2. Get your FLY_API_TOKEN: flyctl auth token
+# 3. Add FLY_API_TOKEN to your GitHub repository secrets
+# 4. Uncomment the 'on:' trigger below
+# 5. Update the app name in fly.toml to match your Fly.io app
+#
+# See: https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
 
-name: Fly Deploy
-on:
-  push:
-    branches:
-      - main
+name: Fly Deploy (Example - Disabled)
+# on:
+#   push:
+#     branches:
+#       - main
 jobs:
   deploy:
     name: Deploy app
