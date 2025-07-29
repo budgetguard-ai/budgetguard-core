@@ -20,7 +20,12 @@ import {
   type Period,
 } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
-import { readBudget, writeBudget, deleteBudget } from "./budget.js";
+import {
+  readBudget,
+  writeBudget,
+  deleteBudget,
+  readBudgetsOptimized,
+} from "./budget.js";
 import { readRateLimit, writeRateLimit } from "./rate-limit.js";
 import type { CompletionRequest } from "./providers/base.js";
 import {
@@ -793,37 +798,15 @@ export async function buildServer() {
           })
           .catch(() => {});
       }
-      const budgets = [] as Array<{
-        period: string;
-        usage: number;
-        budget: number;
-        start: string;
-        end: string;
-      }>;
-      for (const period of BUDGET_PERIODS) {
-        const { amount, startDate, endDate } = await readBudget({
-          tenant,
-          period,
-          prisma,
-          redis: redisClient,
-          defaultBudget: DEFAULT_BUDGET,
-        });
-        const now = new Date();
-        if (now < startDate || now > endDate) continue;
-        const key = ledgerKey(period, now, { startDate, endDate });
-        let usage = 0;
-        if (redisClient) {
-          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-          if (cur) usage = parseFloat(cur);
-        }
-        budgets.push({
-          period,
-          usage,
-          budget: amount,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        });
-      }
+      // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
+      const { budgets } = await readBudgetsOptimized(
+        tenant,
+        BUDGET_PERIODS,
+        prisma,
+        redisClient,
+        DEFAULT_BUDGET,
+        ledgerKey,
+      );
       const input = {
         tenant,
         route: req.routeOptions.url ?? req.url,
@@ -974,37 +957,15 @@ export async function buildServer() {
           })
           .catch(() => {});
       }
-      const budgets = [] as Array<{
-        period: string;
-        usage: number;
-        budget: number;
-        start: string;
-        end: string;
-      }>;
-      for (const period of BUDGET_PERIODS) {
-        const { amount, startDate, endDate } = await readBudget({
-          tenant,
-          period,
-          prisma,
-          redis: redisClient,
-          defaultBudget: DEFAULT_BUDGET,
-        });
-        const now = new Date();
-        if (now < startDate || now > endDate) continue;
-        const key = ledgerKey(period, now, { startDate, endDate });
-        let usage = 0;
-        if (redisClient) {
-          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-          if (cur) usage = parseFloat(cur);
-        }
-        budgets.push({
-          period,
-          usage,
-          budget: amount,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        });
-      }
+      // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
+      const { budgets } = await readBudgetsOptimized(
+        tenant,
+        BUDGET_PERIODS,
+        prisma,
+        redisClient,
+        DEFAULT_BUDGET,
+        ledgerKey,
+      );
       const input = {
         tenant,
         route: req.routeOptions.url ?? req.url,
