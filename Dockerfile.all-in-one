@@ -2,9 +2,13 @@ FROM node:20-bullseye
 
 WORKDIR /app
 
-# Install system dependencies including OPA
+# Install system dependencies including OPA, PostgreSQL, Redis, and supervisor
 RUN apt-get update && apt-get install -y \
     curl \
+    postgresql postgresql-contrib \
+    redis-server \
+    supervisor \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install OPA CLI
@@ -13,6 +17,16 @@ RUN OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/rel
     chmod +x opa && \
     mv opa /usr/local/bin/opa && \
     opa version
+
+# Setup PostgreSQL
+RUN service postgresql start && \
+    su - postgres -c "createdb budgetguard" && \
+    su - postgres -c "psql -c \"ALTER USER postgres PASSWORD 'secret';\"" && \
+    service postgresql stop
+
+# Configure PostgreSQL to listen on all interfaces
+RUN echo "host all all 0.0.0.0/0 md5" >> /etc/postgresql/13/main/pg_hba.conf && \
+    echo "listen_addresses='*'" >> /etc/postgresql/13/main/postgresql.conf
 
 COPY package*.json ./
 RUN npm ci

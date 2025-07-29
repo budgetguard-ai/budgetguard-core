@@ -10,4 +10,3 @@ src/policy/opa_policy.wasm
 CLAUDE.md
 *.log
 dist/server.js
-fly.toml
