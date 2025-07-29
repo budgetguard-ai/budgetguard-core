@@ -219,9 +219,10 @@ npm run migrate
 ## Roadmap
 
 * ✅ **Multi-provider support** (OpenAI, Anthropic, Google)
-* 🔜 **Stripe cost back‑filling** for end‑to‑end showback
-* 🔜 **Email / Slack budget alerts**
-* 🔜 **Additional providers** (Mistral, Azure OpenAI, etc.)
+* 🔜 **Real-Time Budget Alerts**
+* 🔜 **Additional providers** (Mistral, xAI, etc.)
+* 🔜 **Advanced Analytics & Reporting**
+* 🔜 **Feature-Level Budget Controls** 
 
 ---
 
@@ -253,7 +254,7 @@ Apache License 2.0. See `LICENSE`.
 
 **BudgetGuard** — because your AI bills shouldn't keep you up at night.
 
-Give us a ⭐ if this saved you money!
+⭐ Star the repo to get updates and help shape the future of BudgetGuard!
 
 [Documentation](docs/) • [API Reference](docs/api.md) • [Contributing](CONTRIBUTING.md)
 
