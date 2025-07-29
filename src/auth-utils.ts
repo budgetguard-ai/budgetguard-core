@@ -1,6 +1,10 @@
 import bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 
+// Time constants
+const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+const ONE_MINUTE_IN_MS = 60 * 1000;
+
 // In-memory cache for authenticated API keys to avoid expensive bcrypt operations
 const apiKeyCache = new Map<
   string,
@@ -12,8 +16,8 @@ const apiKeyCache = new Map<
     isActive: boolean;
   }
 >();
-const API_KEY_CACHE_TTL = 300000; // 5 minutes cache
-const LAST_USED_UPDATE_INTERVAL = 60000; // Update lastUsedAt max once per minute
+const API_KEY_CACHE_TTL = FIVE_MINUTES_IN_MS;
+const LAST_USED_UPDATE_INTERVAL = ONE_MINUTE_IN_MS;
 
 /**
  * Authenticates an API key by finding all active keys with matching prefix

@@ -41,6 +41,10 @@ import {
 
 dotenv.config();
 
+// Time constants
+const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+const ONE_MINUTE_IN_MS = 60 * 1000;
+
 const DEFAULT_BUDGET = Number(
   process.env.DEFAULT_BUDGET_USD || process.env.MAX_MONTHLY_USD || 50,
 );
@@ -272,7 +276,7 @@ export async function buildServer() {
   // Periodic cleanup of API key cache (every 5 minutes)
   setInterval(() => {
     cleanupApiKeyCache();
-  }, 300000);
+  }, FIVE_MINUTES_IN_MS);
 
   // Register static file serving for dashboard
   const { fileURLToPath } = await import("url");
@@ -558,7 +562,7 @@ export async function buildServer() {
 
   // Rate limit cache to avoid expensive DB/Redis calls on every request
   const rateLimitCache = new Map<string, { limit: number; expires: number }>();
-  const RATE_LIMIT_CACHE_TTL = 60000; // 1 minute cache
+  const RATE_LIMIT_CACHE_TTL = ONE_MINUTE_IN_MS;
 
   // Register rate limiting with in-memory cache optimization
   await app.register(

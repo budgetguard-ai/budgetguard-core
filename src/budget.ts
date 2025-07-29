@@ -46,10 +46,7 @@ export async function readBudget({
   if (redis) {
     const hit = await redis.get(key);
     if (hit) {
-      console.log(`Budget cache HIT for ${key}`);
       return deserialize(hit);
-    } else {
-      console.log(`Budget cache MISS for ${key}`);
     }
   }
 
@@ -61,10 +58,7 @@ export async function readBudget({
   if (redis) {
     const cached = await redis.get(tenantCacheKey);
     if (cached) {
-      console.log(`Tenant cache HIT for ${tenant}`);
       tenantRecord = JSON.parse(cached);
-    } else {
-      console.log(`Tenant cache MISS for ${tenant}`);
     }
   }
 
@@ -76,15 +70,7 @@ export async function readBudget({
 
     // Cache for 1 hour if found
     if (tenantRecord && redis) {
-      console.log(`Caching tenant ${tenant}:`, tenantRecord);
       await redis.setEx(tenantCacheKey, 3600, JSON.stringify(tenantRecord));
-    } else {
-      console.log(
-        `NOT caching tenant ${tenant}. tenantRecord:`,
-        tenantRecord,
-        "redis:",
-        !!redis,
-      );
     }
   }
 
