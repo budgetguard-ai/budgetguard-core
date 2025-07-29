@@ -17,7 +17,7 @@
     "lint": "eslint . --ext .ts",
     "pretest": "bash scripts/ensure-opa-wasm.sh",
     "test": "vitest run",
-    "seed": "ts-node prisma/seed.ts",
+    "seed": "node --loader ts-node/esm prisma/seed.ts",
     "test:setup": "prisma migrate reset --force && npm run seed",
     "prepare": "husky install",
     "commitlint": "commitlint",

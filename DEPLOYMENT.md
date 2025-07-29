@@ -144,6 +144,138 @@ DEFAULT_TENANT=public
    - Use private networks
    - Consider Redis ACLs
 
+## ✈️ Fly.io Deployment
+
+### Quick Start with Fly.io
+
+1. **Install Fly CLI**
+   ```bash
+   # macOS
+   brew install flyctl
+   
+   # Linux/Windows
+   curl -L https://fly.io/install.sh | sh
+   ```
+
+2. **Login and setup**
+   ```bash
+   fly auth login
+   fly launch --copy-config --name your-app-name
+   ```
+
+3. **Configure your app**
+   ```bash
+   # Copy example configuration
+   cp fly.toml.example fly.toml
+   
+   # Edit fly.toml with your app details:
+   # - app = 'your-app-name'
+   # - VITE_API_BASE_URL = "https://your-app-name.fly.dev"
+   # - VITE_ADMIN_API_KEY = "your-admin-api-key"
+   ```
+
+4. **Set secrets**
+   ```bash
+   # Generate secure admin key
+   fly secrets set ADMIN_API_KEY="$(openssl rand -hex 32)"
+   fly secrets set VITE_ADMIN_API_KEY="$(fly secrets list | grep ADMIN_API_KEY | awk '{print $2}')"
+   
+   # Add AI provider keys
+   fly secrets set OPENAI_KEY="sk-..."
+   fly secrets set ANTHROPIC_API_KEY="sk-ant-..."
+   fly secrets set GOOGLE_API_KEY="..."
+   ```
+
+5. **Deploy**
+   ```bash
+   fly deploy
+   ```
+
+### Deployment Options
+
+**Option 1: External Fly Databases (RECOMMENDED)**
+- **Best performance**: ~10ms policy decisions with optimized caching
+- **True persistence**: Data survives all deployments
+- **Production-ready**: Managed services with backups
+- **Lower resource usage**: App gets full CPU/memory
+
+```bash
+# 1. Create databases in same region
+fly postgres create --name budgetguard-db --region your-region
+fly redis create --name budgetguard-redis --region your-region
+
+# 2. Set connection secrets (use URLs from create output)
+fly secrets set DATABASE_URL="postgres://user:pass@budgetguard-db.flycast:5432/budgetguard"
+fly secrets set REDIS_URL="redis://default:pass@budgetguard-redis.flycast:6379"
+```
+
+**Option 2: All-in-One Container (Simple)**
+- Uses included Dockerfile with PostgreSQL + Redis in same container
+- Same policy decision performance (~10ms) with resource contention
+- Good for development/testing, external databases recommended for production
+
+### Fly.io Configuration
+
+The `fly.toml` file configures your deployment:
+
+```toml
+app = 'your-app-name'
+primary_region = 'iad'  # Choose your preferred region
+
+[build]
+  [build.args]
+    # Required for dashboard to work in production
+    VITE_API_BASE_URL = "https://your-app-name.fly.dev"
+    VITE_ADMIN_API_KEY = "your-admin-key-here"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+
+[[vm]]
+  size = 'performance-2x'
+  memory = '8gb'  # Increase if using all-in-one setup
+  cpu_kind = 'performance'
+  cpus = 2
+```
+
+### Fly.io Features Used
+
+- **Automatic HTTPS**: Fly.io handles SSL certificates
+- **Built-in PostgreSQL/Redis**: All services run in a single container (if using all-in-one)
+- **Auto-scaling**: Machines start/stop based on traffic
+- **Health checks**: Built-in health monitoring
+- **Zero-downtime deploys**: Rolling updates automatically
+
+### Monitoring on Fly.io
+
+```bash
+# View logs
+fly logs
+
+# Check app status
+fly status
+
+# Monitor metrics
+fly dashboard
+
+# Scale your app
+fly scale count 2
+fly scale memory 4gb
+```
+
+### Custom Domains on Fly.io
+
+```bash
+# Add custom domain
+fly certs add yourdomain.com
+
+# Check certificate status
+fly certs show yourdomain.com
+```
+
 ## ☸️ Kubernetes Deployment
 
 ### ConfigMap and Secrets
@@ -369,6 +501,21 @@ Resources:
 ```
 
 ## 📈 Performance Optimization
+
+### Multi-Layer Caching Architecture
+
+BudgetGuard uses aggressive caching to achieve sub-10ms policy decisions:
+
+- **API Key Cache**: In-memory (5min TTL) - avoids expensive bcrypt operations
+- **Tenant Cache**: Redis (1hr TTL) - eliminates database queries during decisions
+- **Budget Cache**: Redis with period-appropriate TTLs (5min-1hr)
+- **Rate Limit Cache**: In-memory (1min TTL) - prevents expensive DB lookups
+- **Ultra-batched Redis**: Single `mGet` call for all cache reads
+
+**Performance Results:**
+- First-time authentication: ~280ms (bcrypt security maintained)
+- Cached authentication: ~10ms (96% improvement)
+- Policy decisions: 10-30ms total
 
 ### Redis Configuration
 

@@ -20,7 +20,12 @@ import {
   type Period,
 } from "./ledger.js";
 import { evaluatePolicy } from "./policy/opa.js";
-import { readBudget, writeBudget, deleteBudget } from "./budget.js";
+import {
+  readBudget,
+  writeBudget,
+  deleteBudget,
+  readBudgetsOptimized,
+} from "./budget.js";
 import { readRateLimit, writeRateLimit } from "./rate-limit.js";
 import type { CompletionRequest } from "./providers/base.js";
 import {
@@ -28,9 +33,17 @@ import {
   DatabaseProviderSelector,
   type ProviderType,
 } from "./provider-selector.js";
-import { authenticateApiKey } from "./auth-utils.js";
+import {
+  authenticateApiKey,
+  cleanupApiKeyCache,
+  deactivateApiKeyInCache,
+} from "./auth-utils.js";
 
 dotenv.config();
+
+// Time constants
+const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+const ONE_MINUTE_IN_MS = 60 * 1000;
 
 const DEFAULT_BUDGET = Number(
   process.env.DEFAULT_BUDGET_USD || process.env.MAX_MONTHLY_USD || 50,
@@ -259,6 +272,11 @@ export async function buildServer() {
   await app.register(swaggerUi, {
     routePrefix: "/docs",
   });
+
+  // Periodic cleanup of API key cache (every 5 minutes)
+  setInterval(() => {
+    cleanupApiKeyCache();
+  }, FIVE_MINUTES_IN_MS);
 
   // Register static file serving for dashboard
   const { fileURLToPath } = await import("url");
@@ -542,7 +560,11 @@ export async function buildServer() {
     return payload;
   });
 
-  // Register rate limiting with more restrictive skip function
+  // Rate limit cache to avoid expensive DB/Redis calls on every request
+  const rateLimitCache = new Map<string, { limit: number; expires: number }>();
+  const RATE_LIMIT_CACHE_TTL = ONE_MINUTE_IN_MS;
+
+  // Register rate limiting with in-memory cache optimization
   await app.register(
     rateLimit as unknown as (
       instance: FastifyInstance,
@@ -553,6 +575,17 @@ export async function buildServer() {
       client: redisClient,
       max: async (req: FastifyRequest) => {
         const tenant = (req.headers["x-tenant-id"] as string) || "public";
+
+        // Check in-memory cache first
+        const cached = rateLimitCache.get(tenant);
+        const now = Date.now();
+
+        if (cached && cached.expires > now) {
+          // Cache hit - return immediately
+          return cached.limit === 0 ? Number.MAX_SAFE_INTEGER : cached.limit;
+        }
+
+        // Cache miss - fetch from Redis/DB
         const prismaClient = await getPrisma();
         const limit = await readRateLimit({
           tenant,
@@ -560,6 +593,13 @@ export async function buildServer() {
           redis: redisClient,
           defaultLimit: Number(process.env.MAX_REQS_PER_MIN || 100),
         });
+
+        // Cache the result
+        rateLimitCache.set(tenant, {
+          limit,
+          expires: now + RATE_LIMIT_CACHE_TTL,
+        });
+
         return limit === 0 ? Number.MAX_SAFE_INTEGER : limit;
       },
       timeWindow: "1 minute",
@@ -793,37 +833,15 @@ export async function buildServer() {
           })
           .catch(() => {});
       }
-      const budgets = [] as Array<{
-        period: string;
-        usage: number;
-        budget: number;
-        start: string;
-        end: string;
-      }>;
-      for (const period of BUDGET_PERIODS) {
-        const { amount, startDate, endDate } = await readBudget({
-          tenant,
-          period,
-          prisma,
-          redis: redisClient,
-          defaultBudget: DEFAULT_BUDGET,
-        });
-        const now = new Date();
-        if (now < startDate || now > endDate) continue;
-        const key = ledgerKey(period, now, { startDate, endDate });
-        let usage = 0;
-        if (redisClient) {
-          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-          if (cur) usage = parseFloat(cur);
-        }
-        budgets.push({
-          period,
-          usage,
-          budget: amount,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        });
-      }
+      // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
+      const { budgets } = await readBudgetsOptimized(
+        tenant,
+        BUDGET_PERIODS,
+        prisma,
+        redisClient,
+        DEFAULT_BUDGET,
+        ledgerKey,
+      );
       const input = {
         tenant,
         route: req.routeOptions.url ?? req.url,
@@ -974,37 +992,15 @@ export async function buildServer() {
           })
           .catch(() => {});
       }
-      const budgets = [] as Array<{
-        period: string;
-        usage: number;
-        budget: number;
-        start: string;
-        end: string;
-      }>;
-      for (const period of BUDGET_PERIODS) {
-        const { amount, startDate, endDate } = await readBudget({
-          tenant,
-          period,
-          prisma,
-          redis: redisClient,
-          defaultBudget: DEFAULT_BUDGET,
-        });
-        const now = new Date();
-        if (now < startDate || now > endDate) continue;
-        const key = ledgerKey(period, now, { startDate, endDate });
-        let usage = 0;
-        if (redisClient) {
-          const cur = await redisClient.get(`ledger:${tenant}:${key}`);
-          if (cur) usage = parseFloat(cur);
-        }
-        budgets.push({
-          period,
-          usage,
-          budget: amount,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        });
-      }
+      // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
+      const { budgets } = await readBudgetsOptimized(
+        tenant,
+        BUDGET_PERIODS,
+        prisma,
+        redisClient,
+        DEFAULT_BUDGET,
+        ledgerKey,
+      );
       const input = {
         tenant,
         route: req.routeOptions.url ?? req.url,
@@ -1906,10 +1902,16 @@ export async function buildServer() {
     async (req, reply) => {
       const prisma = await getPrisma();
       const { id } = req.params as { id: string };
+      const keyId = Number(id);
+
       await prisma.apiKey.update({
-        where: { id: Number(id) },
+        where: { id: keyId },
         data: { isActive: false },
       });
+
+      // Mark the key as inactive in the cache to prevent immediate reuse
+      deactivateApiKeyInCache(keyId);
+
       return reply.send({ ok: true });
     },
   );

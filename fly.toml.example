@@ -1,0 +1,55 @@
+# fly.toml app configuration file for BudgetGuard Core
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'your-app-name'  # Replace with your Fly.io app name
+primary_region = 'syd'  # Choose your preferred region (e.g., iad, lax, fra, nrt)
+
+[build]
+  [build.args]
+    # IMPORTANT: These build args are required for the dashboard to work in production
+    VITE_API_BASE_URL = "https://your-app-name.fly.dev"  # Replace with your app URL
+    VITE_ADMIN_API_KEY = "your-admin-key-here"  # Must match your ADMIN_API_KEY secret
+
+[deploy]
+# Uncomment to run migrations on deploy (recommended for production)
+# release_command = 'npx prisma migrate deploy'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  size = 'performance-2x'  # Can be smaller since no local databases
+  memory = '4gb'           # Less memory needed without local DB
+  cpu_kind = 'performance'
+  cpus = 2
+
+# Database Setup (RECOMMENDED for production)
+# For best performance, use external Fly databases:
+#
+# 1. Create databases in same region:
+#    fly postgres create --name your-app-db --region your-region
+#    fly redis create --name your-app-redis --region your-region
+#
+# 2. Set connection URLs:
+#    fly secrets set DATABASE_URL="postgres://..."  # From postgres create
+#    fly secrets set REDIS_URL="redis://..."        # From redis create
+
+# Required secrets to set:
+# - DATABASE_URL: PostgreSQL connection string
+# - REDIS_URL: Redis connection string  
+# - ADMIN_API_KEY: Admin API access key (generate with: openssl rand -hex 32)
+# - OPENAI_KEY: OpenAI API key (if using OpenAI models)
+# - ANTHROPIC_API_KEY: Anthropic API key (if using Claude models)  
+# - GOOGLE_API_KEY: Google API key (if using Gemini models)
+#
+# Example setup:
+# fly secrets set ADMIN_API_KEY="$(openssl rand -hex 32)"
+# fly secrets set DATABASE_URL="postgres://user:pass@your-app-db.flycast:5432/db"
+# fly secrets set REDIS_URL="redis://default:pass@your-app-redis.flycast:6379"
