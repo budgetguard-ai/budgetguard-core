@@ -33,7 +33,7 @@ vi.mock("redis", () => {
       return null;
     }
     async mGet(keys: string[]) {
-      return keys.map(key => this.data[key] ?? null);
+      return keys.map((key) => this.data[key] ?? null);
     }
   }
   const instance = new FakeRedis();

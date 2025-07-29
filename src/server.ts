@@ -33,7 +33,11 @@ import {
   DatabaseProviderSelector,
   type ProviderType,
 } from "./provider-selector.js";
-import { authenticateApiKey } from "./auth-utils.js";
+import {
+  authenticateApiKey,
+  cleanupApiKeyCache,
+  deactivateApiKeyInCache,
+} from "./auth-utils.js";
 
 dotenv.config();
 
@@ -264,6 +268,11 @@ export async function buildServer() {
   await app.register(swaggerUi, {
     routePrefix: "/docs",
   });
+
+  // Periodic cleanup of API key cache (every 5 minutes)
+  setInterval(() => {
+    cleanupApiKeyCache();
+  }, 300000);
 
   // Register static file serving for dashboard
   const { fileURLToPath } = await import("url");
@@ -547,7 +556,11 @@ export async function buildServer() {
     return payload;
   });
 
-  // Register rate limiting with more restrictive skip function
+  // Rate limit cache to avoid expensive DB/Redis calls on every request
+  const rateLimitCache = new Map<string, { limit: number; expires: number }>();
+  const RATE_LIMIT_CACHE_TTL = 60000; // 1 minute cache
+
+  // Register rate limiting with in-memory cache optimization
   await app.register(
     rateLimit as unknown as (
       instance: FastifyInstance,
@@ -558,6 +571,17 @@ export async function buildServer() {
       client: redisClient,
       max: async (req: FastifyRequest) => {
         const tenant = (req.headers["x-tenant-id"] as string) || "public";
+
+        // Check in-memory cache first
+        const cached = rateLimitCache.get(tenant);
+        const now = Date.now();
+
+        if (cached && cached.expires > now) {
+          // Cache hit - return immediately
+          return cached.limit === 0 ? Number.MAX_SAFE_INTEGER : cached.limit;
+        }
+
+        // Cache miss - fetch from Redis/DB
         const prismaClient = await getPrisma();
         const limit = await readRateLimit({
           tenant,
@@ -565,6 +589,13 @@ export async function buildServer() {
           redis: redisClient,
           defaultLimit: Number(process.env.MAX_REQS_PER_MIN || 100),
         });
+
+        // Cache the result
+        rateLimitCache.set(tenant, {
+          limit,
+          expires: now + RATE_LIMIT_CACHE_TTL,
+        });
+
         return limit === 0 ? Number.MAX_SAFE_INTEGER : limit;
       },
       timeWindow: "1 minute",
@@ -1867,10 +1898,16 @@ export async function buildServer() {
     async (req, reply) => {
       const prisma = await getPrisma();
       const { id } = req.params as { id: string };
+      const keyId = Number(id);
+
       await prisma.apiKey.update({
-        where: { id: Number(id) },
+        where: { id: keyId },
         data: { isActive: false },
       });
+
+      // Mark the key as inactive in the cache to prevent immediate reuse
+      deactivateApiKeyInCache(keyId);
+
       return reply.send({ ok: true });
     },
   );
