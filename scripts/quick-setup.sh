@@ -14,8 +14,20 @@ if ! command -v opa &> /dev/null; then
         OPA_VERSION="v0.70.0"
     fi
     
-    echo "Downloading OPA $OPA_VERSION..."
-    curl -L -o /tmp/opa "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static"
+    echo "Detecting system architecture and OS..."
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m)
+    
+    case "$ARCH" in
+        x86_64) ARCH="amd64" ;;
+        armv7l) ARCH="arm" ;;
+        aarch64) ARCH="arm64" ;;
+        *) echo "❌ Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    
+    BINARY="opa_${OS}_${ARCH}_static"
+    echo "Downloading OPA $OPA_VERSION for $OS/$ARCH..."
+    curl -L -o /tmp/opa "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/${BINARY}"
     
     # Verify download
     if [ ! -f /tmp/opa ] || [ ! -s /tmp/opa ]; then
