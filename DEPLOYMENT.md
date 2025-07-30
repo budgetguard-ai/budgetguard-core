@@ -85,8 +85,8 @@ npm run migrate
 # Backup
 pg_dump $DATABASE_URL > backup.sql
 
-# Performance indexes
-CREATE INDEX CONCURRENTLY idx_usage_ledger_tenant_created ON "UsageLedger"(tenant_id, created_at);
+# Performance indexes (adjust field names to match your schema)
+CREATE INDEX CONCURRENTLY idx_usage_ledger_tenant_created ON "UsageLedger"(tenant, created_at);
 ```
 
 ## Troubleshooting

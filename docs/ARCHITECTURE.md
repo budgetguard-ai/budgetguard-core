@@ -93,11 +93,12 @@ Single `mGet` call for all cache reads instead of sequential lookups:
 ```typescript
 // Before: ~200ms (4 sequential calls)
 // After: ~5ms (1 batched call)
-const [budget, tenant, rateLimit] = await redis.mGet([
+const keys = [
   `budget:${tenant}:monthly`,
   `tenant:${tenant}`,
   `ratelimit:${tenant}`
-]);
+];
+const [budget, tenantData, rateLimit] = await redis.mGet(keys);
 ```
 
 ### Performance Results
