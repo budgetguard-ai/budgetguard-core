@@ -25,7 +25,12 @@ fi
 # Setup dashboard env
 mkdir -p src/dashboard
 if [ ! -f src/dashboard/.env ]; then
-    echo "VITE_ADMIN_API_KEY=$(grep ADMIN_API_KEY .env | cut -d '=' -f2)" > src/dashboard/.env
+    ADMIN_API_KEY_VALUE=$(grep '^ADMIN_API_KEY=' .env | cut -d '=' -f2-)
+    if [ -z "$ADMIN_API_KEY_VALUE" ]; then
+        echo "❌ Error: ADMIN_API_KEY not found or empty in .env file."
+        exit 1
+    fi
+    printf 'VITE_ADMIN_API_KEY="%s"\n' "$ADMIN_API_KEY_VALUE" > src/dashboard/.env
 fi
 
 # Start services
