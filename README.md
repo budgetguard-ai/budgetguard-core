@@ -79,64 +79,10 @@ npm run demo
 **Note:** The setup script automatically creates `src/dashboard/.env` with the required `VITE_ADMIN_API_KEY` and `VITE_API_BASE_URL` variables.
 
 ### Next Steps
-- [Create your first tenant](#tenant-management) 
-- [Set custom budgets](#budget-management)  
+- Create your first tenant via the dashboard
+- Set custom budgets for different tenants
 - [Deploy to production](DEPLOYMENT.md)
 
-## ✅ Verify It's Working
-
-After setup, you should see:
-
-1. **Dashboard loads** → http://localhost:3000/dashboard
-   - Shows system health as "green"
-   - Shows demo tenant with $0.00 usage
-
-2. **Demo request works** → `npm run demo` 
-   - Creates a tenant
-   - Makes an AI call  
-   - Shows ~$0.02 usage in dashboard
-
-3. **Budget enforcement works** → Try exceeding the $50 default budget
-   - Requests get blocked with "Budget exceeded" error
-   - Dashboard shows red warning
-
-**If something's not working:**
-- Check `docker logs budgetguard-api` for errors
-- Verify your `.env` file has valid API keys
-- Run `curl http://localhost:3000/health` to check server status
-
-## 🔧 Common Issues
-
-### "OPA command not found"
-```bash
-# The setup script should handle this, but if it fails:
-curl -L -o opa https://github.com/open-policy-agent/opa/releases/latest/download/opa_linux_amd64_static
-chmod +x opa && sudo mv opa /usr/local/bin/opa
-```
-
-### "Dashboard shows connection refused"  
-```bash
-# Check your admin key matches in both files:
-grep ADMIN_API_KEY .env
-grep VITE_ADMIN_API_KEY src/dashboard/.env
-# They should be the same
-```
-
-### "Database connection failed"
-```bash
-# Restart the database
-docker compose down
-docker compose up -d postgres redis
-sleep 5
-npx prisma migrate dev
-```
-
-### "Invalid API key" errors
-- Make sure your OpenAI/Anthropic keys are valid
-- Check the keys don't have extra spaces or quotes
-- Try the keys directly with the provider APIs first
-
----
 
 ## 🎛️ Management Dashboard
 
@@ -160,26 +106,6 @@ Once your server is running, visit: **http://localhost:3000/dashboard**
 
 ---
 
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**"OPA command not found"**
-- Make sure you completed step 2 (Install OPA)
-- Verify with `opa version`
-
-**"Dashboard shows connection refused"**  
-- Ensure `VITE_ADMIN_API_KEY` is set in `src/dashboard/.env`
-- Make sure it matches your main `ADMIN_API_KEY`
-- Rebuild: `docker compose down && docker compose up --build`
-
-**"Database connection failed"**
-- Start database first: `docker compose up -d postgres redis`
-- Wait a few seconds before running migrations
-
-**"Worker fails with TypeScript error"**
-- Install tsx: `npm install -g tsx`
-- Run with: `tsx src/worker.ts`
 
 ---
 
@@ -284,7 +210,16 @@ npm run migrate
 2. Ensure `npm run test` passes
 3. Open a PR—CI will lint, type‑check, and run the integration suite
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines. We follow the Contributor Covenant code of conduct.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+## 🔧 Troubleshooting
+
+**Common issues:**
+- **OPA not found**: Setup script should install automatically
+- **Dashboard connection refused**: Check `ADMIN_API_KEY` matches in both `.env` files  
+- **Database errors**: Restart with `docker compose down && docker compose up -d`
+- **Invalid API keys**: Verify keys are valid and have no extra spaces
+- **Still stuck?**: Check `docker logs budgetguard-api` for errors
 
 ---
 

@@ -1,27 +1,19 @@
-# BudgetGuard Core Architecture
+# BudgetGuard Architecture
+
+High-performance AI gateway with budget controls, rate limiting, and policy enforcement. Adds ~10-15ms latency while ensuring cost control.
 
 ## System Overview
 
-BudgetGuard Core is a high-performance AI gateway designed to provide budget controls, rate limiting, and policy enforcement for AI API requests. It acts as a transparent proxy between client applications and AI providers (OpenAI, Anthropic, Google), adding minimal latency (~10-15ms) while ensuring cost control and compliance.
-
-### High-Level Architecture
-
 ```
-┌─────────────┐    ┌─────────────────┐    ┌──────────────┐    ┌─────────────┐
-│   Client    │───▶│  BudgetGuard    │───▶│   Provider   │───▶│ AI Response │
-│ Application │    │   API Gateway   │    │  (OpenAI,    │    │             │
-└─────────────┘    └─────────────────┘    │ Anthropic,   │    └─────────────┘
-                           │               │  Google)     │
-                           ▼               └──────────────┘
-                   ┌─────────────────┐
-                   │  Policy Engine  │
-                   │   (OPA/Rego)    │
-                   └─────────────────┘
+┌─────────────┐    ┌─────────────────┐    ┌──────────────┐
+│   Client    │───▶│  BudgetGuard    │───▶│   Provider   │
+│ Application │    │   API Gateway   │    │ (OpenAI, etc)│
+└─────────────┘    └─────────────────┘    └──────────────┘
                            │
                            ▼
                    ┌─────────────────┐    ┌─────────────┐
-                   │    Database     │    │    Redis    │
-                   │   (Postgres)    │◀──▶│   (Cache)   │
+                   │    Database     │◀──▶│    Redis    │
+                   │   (Postgres)    │    │   (Cache)   │
                    └─────────────────┘    └─────────────┘
                            ▲
                            │
@@ -33,442 +25,108 @@ BudgetGuard Core is a high-performance AI gateway designed to provide budget con
 
 ## Core Components
 
-### 1. API Gateway (`src/server.ts`)
+### API Gateway (`src/server.ts`)
+- **Request Interception**: Captures `/v1/chat/completions` requests
+- **Authentication**: API key validation with in-memory cache (5min TTL)
+- **Budget Validation**: Ultra-fast checks via batched Redis operations
+- **Rate Limiting**: In-memory cache (1min TTL) prevents expensive lookups
+- **Policy Evaluation**: Sub-10ms decisions with OPA/Rego
+- **Request Forwarding**: Proxies to appropriate AI providers
 
-The main Fastify-based HTTP server that handles all incoming requests. Key responsibilities:
+### Policy Engine (`src/policy/`)
+- **OPA/Rego**: Business rules in `src/policy/opa.rego`
+- **WASM Compilation**: Fast policy evaluation
+- **Default Policy**: Allow under budget, deny admin routes after 8pm
 
-- **Request Interception**: Captures all `/v1/chat/completions` and `/v1/responses` requests
-- **High-Performance Authentication**: Validates API keys using in-memory cache (5min TTL) + bcrypt fallback
-- **Ultra-Fast Budget Validation**: Checks usage via batched Redis operations (`mGet`)
-- **Cached Rate Limiting**: In-memory rate limit cache (1min TTL) prevents expensive lookups
-- **Optimized Policy Evaluation**: Sub-10ms policy decisions with multi-layer caching
-- **Request Forwarding**: Proxies approved requests to appropriate AI providers
-- **Usage Tracking**: Logs all requests to Redis streams for background processing
+### Provider System (`src/providers/`)
+- **OpenAI** (`openai.ts`): GPT models
+- **Anthropic** (`anthropic.ts`): Claude models  
+- **Google** (`google.ts`): Gemini models
+- **Dynamic Routing**: Model name determines provider
 
-**Performance**: ~10ms policy decisions (96% faster than naive implementation)
-
-### 2. Policy Engine (`src/policy/`)
-
-Built on Open Policy Agent (OPA) with Rego policy language:
-
-- **Policy File**: `src/policy/opa.rego` contains business rules
-- **WASM Compilation**: Policies are compiled to WASM for fast evaluation
-- **Input Context**: Receives tenant info, route, timing, and budget data
-- **Default Policy**: Allow requests under budget, deny admin routes after 8pm
-- **Custom Rules**: Easily extensible for complex business logic
-
-### 3. Provider System (`src/providers/`)
-
-Abstraction layer for different AI providers:
-
-- **Base Interface** (`base.ts`): Common contract for all providers
-- **OpenAI Provider** (`openai.ts`): GPT model integration
-- **Anthropic Provider** (`anthropic.ts`): Claude model integration  
-- **Google Provider** (`google.ts`): Gemini model integration
-- **Dynamic Routing**: `getProviderForModel()` selects provider based on model name
-- **Health Monitoring**: Each provider implements health check endpoints
-
-### 4. Background Worker (`src/worker.ts`)
-
-Dedicated process for asynchronous operations:
-
-- **Event Processing**: Consumes events from Redis streams (`bg_events`)
-- **Usage Persistence**: Writes usage data to `UsageLedger` table
-- **Tenant Management**: Auto-creates tenants on first usage
-- **Error Handling**: Retries failed operations with exponential backoff
-
-### 5. Multi-tenant System
-
-Comprehensive tenant isolation:
-
-- **Tenant Identification**: Via `X-Tenant-Id` header or API key mapping
-- **Resource Scoping**: All budgets, rate limits, and usage data are tenant-specific
-- **Default Tenant**: "public" tenant for unauthenticated requests
-- **API Key Management**: Each tenant can have multiple API keys
+### Background Worker (`src/worker.ts`)
+- **Event Processing**: Consumes from Redis streams
+- **Usage Persistence**: Writes to `UsageLedger` table
+- **Tenant Management**: Auto-creates tenants
 
 ## Request Flow
 
-### 1. Request Reception
-```typescript
-// Client sends request to /v1/chat/completions
-POST /v1/chat/completions
-Headers:
-  Authorization: Bearer sk-...
-  X-Tenant-Id: company-xyz
-  Content-Type: application/json
-Body: { model: "gpt-4.1", messages: [...] }
-```
+1. **Authentication**: Validate API key (cached)
+2. **Budget Check**: Batched Redis lookup for limits/usage
+3. **Rate Limiting**: Check requests per minute
+4. **Policy Evaluation**: OPA decision (~1-2ms)
+5. **Provider Selection**: Route by model name
+6. **Request Forwarding**: Proxy to AI provider
+7. **Usage Tracking**: Log to Redis stream
 
-### 2. Authentication & Tenant Resolution
-```typescript
-// Extract tenant from header or API key lookup
-const tenant = extractTenantFromRequest(request);
-const apiKey = validateApiKey(request.headers.authorization);
-```
-
-### 3. Ultra-Optimized Budget & Rate Limit Checks
-```typescript
-// Single batched Redis call for ALL data (budgets, tenant, rate limits, usage)
-const { budgets, rateLimit } = await readBudgetsOptimized(
-  tenant, BUDGET_PERIODS, prisma, redis, defaultBudget, ledgerKeyFn
-);
-
-// Check if request would exceed limits
-if (currentUsage + estimatedCost > budget.amount) {
-  return { status: 429, error: "Budget exceeded" };
-}
-```
-
-### 4. Policy Evaluation
-```typescript
-// OPA policy evaluation with context
-const policyInput = {
-  tenant: tenant,
-  route: "/v1/chat/completions",
-  time: new Date().toISOString(),
-  budgets: budgetArray
-};
-
-const decision = await evaluatePolicy(policyInput);
-if (!decision.allow) {
-  return { status: 403, error: decision.reason };
-}
-```
-
-### 5. Provider Selection & Forwarding
-```typescript
-// Dynamic provider selection based on model
-const provider = await getProviderForModel(request.body.model, prisma, config);
-
-// Forward request to selected provider
-const response = await provider.chatCompletion(request.body);
-```
-
-### 6. Usage Tracking
-```typescript
-// Calculate actual token usage and cost
-const { promptTokens, completionTokens, cost } = await countTokensAndCost(
-  request.body, response.data, model
-);
-
-// Stream usage event for background processing
-await redis.xAdd("bg_events", "*", {
-  tenant,
-  route: "/v1/chat/completions",
-  model,
-  usd: cost.toString(),
-  promptTok: promptTokens.toString(),
-  compTok: completionTokens.toString(),
-  ts: Date.now().toString()
-});
-```
-
-## Data Architecture
+## Data Storage
 
 ### Database Schema (Postgres)
-
-| Table | Purpose | Key Fields |
-|-------|---------|------------|
-| `Tenant` | Customer accounts | `name`, `rateLimitPerMin` |
-| `ApiKey` | Authentication tokens | `key`, `tenantId`, `isActive` |
-| `Budget` | Spending limits | `period`, `amountUsd`, `startDate`, `endDate` |
-| `UsageLedger` | Immutable usage records | `tenant`, `model`, `usd`, `promptTok`, `compTok` |
-| `ModelPricing` | Token costs per model | `model`, `provider`, `promptPrice`, `completionPrice` |
-| `PolicyBundle` | Compiled OPA policies | `version`, `bundle` |
-| `Alert` | Notification rules | `tenantId`, `type`, `threshold` |
-| `AuditLog` | System actions | `action`, `tenantId`, `metadata` |
+- `Tenant`: Customer accounts and rate limits
+- `ApiKey`: Authentication tokens  
+- `Budget`: Spending limits by period
+- `UsageLedger`: Immutable usage records
+- `ModelPricing`: Token costs per model/provider
 
 ### Redis Cache Patterns
-
-#### Budget Caching
 ```redis
-Key: budget:<tenant>:<period>
-Value: JSON { amount: 100, used: 25.50, startDate: "2024-01-01", endDate: "2024-01-31" }
-TTL: 300 seconds (5 minutes)
+# Budget caching
+budget:<tenant>:<period> → { amount: 100, used: 25.50 }
+
+# Rate limiting  
+rate_limit:<tenant>:<minute> → request_count
+
+# Event streaming
+bg_events → { tenant, model, usd, tokens, timestamp }
 ```
-
-#### Rate Limiting
-```redis
-Key: rate_limit:<tenant>:<minute>
-Value: request_count
-TTL: 60 seconds
-```
-
-#### Usage Event Streaming
-```redis
-Stream: bg_events
-Fields: { tenant, route, model, usd, promptTok, compTok, ts }
-Consumer: background worker process
-```
-
-## Provider System Architecture
-
-### Model-to-Provider Mapping
-
-The system uses the `ModelPricing` table to determine which provider handles each model:
-
-```sql
-SELECT provider FROM ModelPricing WHERE model = 'gpt-4.1';
--- Returns: "openai"
-
-SELECT provider FROM ModelPricing WHERE model = 'claude-3-sonnet';
--- Returns: "anthropic"
-
-SELECT provider FROM ModelPricing WHERE model = 'gemini-pro';
--- Returns: "google"
-```
-
-### Provider Configuration
-
-Each provider requires specific configuration:
-
-```typescript
-// OpenAI Provider
-const openaiProvider = new OpenAIProvider({
-  apiKey: process.env.OPENAI_KEY || request.headers['x-openai-key'],
-  baseUrl: "https://api.openai.com/v1"
-});
-
-// Anthropic Provider  
-const anthropicProvider = new AnthropicProvider({
-  apiKey: process.env.ANTHROPIC_API_KEY || request.headers['x-anthropic-key'],
-  baseUrl: "https://api.anthropic.com"
-});
-
-// Google Provider
-const googleProvider = new GoogleProvider({
-  apiKey: process.env.GOOGLE_API_KEY || request.headers['x-google-api-key'],
-  baseUrl: "https://generativelanguage.googleapis.com"
-});
-```
-
-### Special Pricing Handling
-
-Some models require special pricing logic:
-
-```typescript
-// Gemini 2.5 Pro has tiered pricing
-if (model === 'gemini-2.5-pro') {
-  const pricing = totalTokens <= 200000 
-    ? { prompt: 0.00025, completion: 0.001 }  // ≤200k tokens
-    : { prompt: 0.00050, completion: 0.002 }; // >200k tokens
-}
-```
-
-## Caching Strategy
-
-### Two-Tier Caching Architecture
-
-1. **Redis (L1 Cache)**: Sub-millisecond lookups for hot data
-   - Budget current usage and limits
-   - Rate limit counters
-   - Session data
-
-2. **Postgres (L2 Cache)**: Authoritative data store
-   - All persistent state
-   - Historical usage data
-   - Configuration and policies
-
-### Cache Invalidation
-
-```typescript
-// Budget updates invalidate cache
-async function setBudget(tenant: string, period: string, amount: number) {
-  // Update database
-  await prisma.budget.upsert({ ... });
-  
-  // Invalidate Redis cache
-  await redis.del(`budget:${tenant}:${period}`);
-}
-```
-
-### Cache Warming
-
-```typescript
-// Background process keeps hot budgets in cache
-async function warmBudgetCache() {
-  const activeTenants = await prisma.tenant.findMany({
-    where: { lastUsedAt: { gt: oneDayAgo } }
-  });
-  
-  for (const tenant of activeTenants) {
-    await readBudget({ tenant: tenant.name, period: "monthly", redis });
-  }
-}
-```
-
-## Background Processing Architecture
-
-### Event-Driven Usage Tracking
-
-The system uses Redis Streams for reliable, ordered event processing:
-
-```typescript
-// Producer (API Gateway)
-await redis.xAdd("bg_events", "*", {
-  tenant: "company-xyz",
-  route: "/v1/chat/completions", 
-  model: "gpt-4.1",
-  usd: "0.0234",
-  promptTok: "150",
-  compTok: "89",
-  ts: "1704067200000"
-});
-
-// Consumer (Background Worker)
-const events = await redis.xRead(
-  { key: "bg_events", id: lastProcessedId },
-  { BLOCK: 0, COUNT: 10 }
-);
-```
-
-### Worker Process Responsibilities
-
-1. **Usage Persistence**: Write events to `UsageLedger` table
-2. **Tenant Auto-creation**: Create tenant records on first usage
-3. **Error Recovery**: Retry failed operations with exponential backoff
-4. **Metrics Collection**: Aggregate usage statistics
-
-### Reliability Features
-
-- **At-least-once delivery**: Redis Streams guarantee event delivery
-- **Idempotent operations**: Safe to replay events
-- **Dead letter handling**: Failed events moved to error stream
-- **Monitoring**: Health checks and metrics for worker status
-
-## Security Model
-
-### API Key Management
-
-```typescript
-// Multi-tier key validation
-1. Admin keys: Full system access (ADMIN_API_KEY env var)
-2. Tenant keys: Scoped to specific tenant (stored in ApiKey table)
-3. Provider keys: Direct provider access (passed through)
-```
-
-### Tenant Isolation
-
-- **Data Isolation**: All queries filtered by `tenantId`
-- **Resource Isolation**: Budgets and rate limits per tenant
-- **Key Isolation**: API keys cannot access other tenants' data
-
-### Secure Defaults
-
-```typescript
-// Default budget enforcement
-const DEFAULT_BUDGET = 50; // USD
-
-// Default rate limiting  
-const DEFAULT_RATE_LIMIT = 60; // requests per minute
-
-// Secure policy evaluation
-const defaultPolicy = `
-package budgetguard
-default allow = false
-allow {
-  input.budgets[_].used < input.budgets[_].amount
-}
-`;
-```
-
-## Performance Characteristics
-
-### Latency Profile
-
-- **Cache Hit**: ~2-5ms additional latency
-- **Cache Miss**: ~10-15ms additional latency  
-- **Policy Evaluation**: ~1-2ms (WASM execution)
-- **Provider Health Check**: ~100-500ms (cached for 5 minutes)
-
-### Throughput Capacity
-
-- **Concurrent Requests**: 1000+ requests/second per instance
-- **Redis Operations**: 10,000+ ops/second
-- **Database Connections**: Configurable pool size (default: 10)
-- **Worker Throughput**: 100+ events/second per worker
-
-### Scaling Considerations
-
-- **Horizontal Scaling**: Stateless API servers behind load balancer
-- **Database Scaling**: Read replicas for analytics queries
-- **Redis Scaling**: Redis Cluster for high-availability
-- **Worker Scaling**: Multiple worker processes per Redis stream
-
-## Monitoring & Observability
-
-### Health Check Endpoints
-
-```typescript
-GET /health              // API server health
-GET /admin/health        // Provider health status
-GET /admin/metrics       // Usage and performance metrics
-```
-
-### Structured Logging
-
-```typescript
-// Request logging with correlation IDs
-logger.info({
-  requestId: "req_123",
-  tenant: "company-xyz", 
-  model: "gpt-4.1",
-  latency: 45,
-  cost: 0.0234
-}, "Request completed");
-```
-
-### Key Metrics
-
-- **Request rate**: Requests per second by tenant/model
-- **Error rate**: 4xx/5xx responses by endpoint
-- **Latency percentiles**: P50, P95, P99 response times
-- **Budget utilization**: Spending vs. limits by tenant
-- **Provider health**: Availability and response times
 
 ## Performance Optimizations
 
-### Multi-Layer Caching Architecture
+### Multi-Layer Caching
+1. **API Key Cache**: In-memory (5min TTL) - avoids bcrypt
+2. **Tenant Cache**: Redis (1hr TTL) - eliminates DB queries  
+3. **Budget Cache**: Redis (5min TTL) - fast limit checks
+4. **Rate Limit Cache**: In-memory (1min TTL) - prevents DB lookups
 
-BudgetGuard implements aggressive caching at multiple levels to achieve sub-10ms policy decisions:
-
+### Ultra-Batched Redis
+Single `mGet` call for all cache reads instead of sequential lookups:
 ```typescript
-// Layer 1: API Key Authentication Cache (In-Memory, 5min TTL)
-const apiKeyCache = new Map<string, { id: number; tenantId: number; expires: number }>();
-
-// Layer 2: Tenant Cache (Redis, 1hr TTL) 
-const tenantCacheKey = `tenant:${tenant}`;
-
-// Layer 3: Budget Cache (Redis, period-appropriate TTL)
-const budgetCacheKey = `budget:${tenant}:${period}`;
-
-// Layer 4: Rate Limit Cache (In-Memory, 1min TTL)
-const rateLimitCache = new Map<string, { limit: number; expires: number }>();
+// Before: ~200ms (4 sequential calls)
+// After: ~5ms (1 batched call)
+const keys = [
+  `budget:${tenant}:monthly`,
+  `tenant:${tenant}`,
+  `ratelimit:${tenant}`
+];
+const [budget, tenantData, rateLimit] = await redis.mGet(keys);
 ```
 
-### Ultra-Batched Redis Operations
+### Performance Results
+- **First-time auth**: ~280ms (bcrypt security)
+- **Cached auth**: ~10ms (96% improvement)
+- **Policy decisions**: 10-30ms total
+- **Throughput**: 1000+ requests/second per instance
 
-Instead of sequential cache lookups, BudgetGuard uses a single batched Redis call:
+## Security Model
 
-```typescript
-// OLD: Multiple sequential calls (~50ms each)
-const budget = await redis.get(`budget:${tenant}:monthly`);
-const tenant = await redis.get(`tenant:${tenant}`);  
-const rateLimit = await redis.get(`ratelimit:${tenant}`);
-const usage = await redis.get(`ledger:${tenant}:${key}`);
+### API Key Types
+- **Admin Keys**: Full system access (`X-Admin-Key`)
+- **Tenant Keys**: Scoped access (`X-API-Key`)
+- **Provider Keys**: AI provider access (`Authorization`)
 
-// NEW: Single batched call (~5ms total)
-const [budget, tenant, rateLimit, usage] = await redis.mGet([
-  `budget:${tenant}:monthly`, `tenant:${tenant}`, 
-  `ratelimit:${tenant}`, `ledger:${tenant}:${key}`
-]);
-```
+### Tenant Isolation
+- All data filtered by `tenantId`
+- Resource quotas per tenant
+- API keys cannot cross tenant boundaries
 
-### Performance Benchmarks
+## Scaling Considerations
+- **API Servers**: Stateless, horizontally scalable
+- **Workers**: Scale by Redis queue length
+- **Database**: Read replicas for analytics
+- **Redis**: Cluster for high availability
 
-- **First-time authentication**: ~280ms (bcrypt security requirement)
-- **Cached authentication**: ~10ms (96% improvement)
-- **Policy decisions**: 10-30ms (down from 280ms)
-- **Network overhead**: 20-35ms end-to-end
-
-This architecture provides a robust, scalable foundation for AI API cost control while maintaining enterprise-grade performance and reliability.
+## Monitoring
+- `GET /health` - Basic health check
+- `GET /health/detailed` - Full system status
+- Structured logging with correlation IDs
+- Key metrics: request rate, error rate, latency, budget utilization
