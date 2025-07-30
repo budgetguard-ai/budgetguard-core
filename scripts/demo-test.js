@@ -29,7 +29,7 @@ async function runDemo() {
     const apiKey = await axios.post(`http://localhost:3000/admin/tenant/${tenant.data.id}/apikeys`, {
       name: 'demo-key'
     }, {
-      headers: { 'X-Admin-Key': process.env.ADMIN_API_KEY || 'demo-admin-key' }
+      headers: { 'X-Admin-Key': process.env.ADMIN_API_KEY }
     });
     
     console.log('✅ Created API key');
