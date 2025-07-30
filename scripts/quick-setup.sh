@@ -32,7 +32,8 @@ if [ ! -f src/dashboard/.env ]; then
     fi
     cat > src/dashboard/.env << EOF
 VITE_ADMIN_API_KEY=${ADMIN_API_KEY_VALUE//\"/}
-VITE_API_BASE_URL=
+# Default base URL for API requests. Update this value for production or other environments.
+VITE_API_BASE_URL=http://localhost:3000
 EOF
 fi
 
