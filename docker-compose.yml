@@ -10,7 +10,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env 
+      - .env
   redis:
     image: redis:7-alpine
     ports:
