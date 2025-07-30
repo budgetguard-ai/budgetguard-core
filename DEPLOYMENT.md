@@ -21,21 +21,51 @@ BudgetGuard consists of several components:
    cd budgetguard-core
    ```
 
-2. **Configure environment**
+2. **Install OPA (Open Policy Agent)**
+   ```bash
+   # Download and install OPA
+   export OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
+   curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static
+   chmod +x opa
+   sudo mv opa /usr/local/bin/opa
+   
+   # Build policy bundle
+   bash scripts/build-opa-wasm.sh
+   ```
+
+3. **Configure environment**
    ```bash
    cp .env.example .env
    # Edit .env with your production values
    ```
 
-3. **Build and start all services**
+4. **Configure dashboard environment**
+   ```bash
+   cd src/dashboard
+   echo "VITE_ADMIN_API_KEY=your-secure-admin-key-here" > .env
+   cd ../..
+   ```
+
+5. **Start database services first**
+   ```bash
+   docker compose up -d postgres redis
+   sleep 5  # Wait for database to be ready
+   ```
+
+6. **Run database migrations and seed data**
+   ```bash
+   npx prisma migrate dev
+   npm run seed
+   ```
+
+7. **Build and start all services**
    ```bash
    docker compose up --build -d
    ```
 
-4. **Run database migrations**
+8. **Start the background worker**
    ```bash
-   docker compose exec api npm run migrate
-   docker compose exec api npm run seed
+   npm run worker
    ```
 
 ### Production Docker Compose
@@ -47,7 +77,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: budgetguard
       POSTGRES_USER: postgres
@@ -55,12 +85,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    ports:
+      - "5432:5432"
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
       - redis_data:/data
+    ports:
+      - "6379:6379"
 
   api:
     build: .
@@ -68,18 +102,14 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:${DB_PASSWORD}@postgres:5432/budgetguard
       REDIS_URL: redis://redis:6379
-      OPENAI_KEY: ${OPENAI_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
-      DEFAULT_BUDGET_USD: ${DEFAULT_BUDGET_USD}
-      MAX_REQS_PER_MIN: ${MAX_REQS_PER_MIN}
     ports:
       - "3000:3000"
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
+    env_file:
+      - .env
 
   worker:
     build: .
@@ -92,6 +122,8 @@ services:
       - postgres
       - redis
     restart: unless-stopped
+    env_file:
+      - .env
 
 volumes:
   postgres_data:
@@ -102,15 +134,16 @@ volumes:
 
 ### Required Environment Variables
 
+**Main `.env` file:**
 ```bash
 # Database
 DATABASE_URL=postgres://user:password@host:5432/budgetguard
 REDIS_URL=redis://host:6379
 
 # AI Provider API Keys
-OPENAI_KEY=sk-...                    # For GPT models (gpt-4.1, etc.)
-ANTHROPIC_API_KEY=sk-ant-...         # For Claude models (claude-3-5-haiku-latest, etc.)
-GOOGLE_API_KEY=...                   # For Gemini models (gemini-2.5-flash, etc.)
+OPENAI_KEY=sk-...                    # For GPT models
+ANTHROPIC_API_KEY=sk-ant-...         # For Claude models
+GOOGLE_API_KEY=...                   # For Gemini models
 
 # Security
 ADMIN_API_KEY=your-secure-admin-key  # Admin API access
@@ -124,6 +157,15 @@ BUDGET_PERIODS=daily,monthly         # Budget periods to track
 NODE_ENV=production
 OPA_POLICY_PATH=src/policy/opa_policy.wasm
 DEFAULT_TENANT=public
+```
+
+**Dashboard environment file (`src/dashboard/.env`):**
+```bash
+# Dashboard Configuration (CRITICAL - dashboard won't work without this!)
+VITE_ADMIN_API_KEY=your-secure-admin-key  # Must match ADMIN_API_KEY above
+
+# For remote deployments, set the API base URL
+VITE_API_BASE_URL=https://your-domain.com
 ```
 
 ### Security Best Practices
@@ -291,6 +333,7 @@ stringData:
   ANTHROPIC_API_KEY: sk-ant-...
   GOOGLE_API_KEY: ...
   ADMIN_API_KEY: your-secure-admin-key
+  VITE_ADMIN_API_KEY: your-secure-admin-key
   DB_PASSWORD: your-db-password
 
 ---
@@ -544,7 +587,25 @@ default_statistics_target = 100
 
 ### Common Issues
 
-1. **High Memory Usage**
+1. **"OPA command not found"**
+   ```bash
+   # Install OPA first
+   export OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
+   curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static
+   chmod +x opa && sudo mv opa /usr/local/bin/opa
+   ```
+
+2. **"Dashboard shows connection refused"**
+   ```bash
+   # Ensure VITE_ADMIN_API_KEY is set in src/dashboard/.env
+   echo "VITE_ADMIN_API_KEY=your-admin-key" > src/dashboard/.env
+   
+   # Rebuild dashboard
+   cd src/dashboard && npm run build && cd ../..
+   docker compose up --build
+   ```
+
+3. **High Memory Usage**
    ```bash
    # Check memory usage
    docker stats
@@ -553,13 +614,13 @@ default_statistics_target = 100
    NODE_OPTIONS="--max-old-space-size=4096"
    ```
 
-2. **Database Connection Errors**
+4. **Database Connection Errors**
    ```bash
    # Check connection pool settings
    DATABASE_URL="postgres://user:pass@host:5432/db?pool_timeout=0&connection_limit=10"
    ```
 
-3. **Redis Connection Issues**
+5. **Redis Connection Issues**
    ```bash
    # Test Redis connectivity
    redis-cli -h redis-host ping
@@ -608,21 +669,29 @@ npx prisma migrate status
 ## 📋 Deployment Checklist
 
 ### Pre-deployment
-- [ ] Environment variables configured
+- [ ] OPA installed and policy bundle built
+- [ ] Environment variables configured (main .env and dashboard .env)
 - [ ] SSL certificates obtained
 - [ ] Database backups scheduled
 - [ ] Monitoring setup complete
 - [ ] Security review completed
 
 ### Deployment
-- [ ] Services deployed successfully
-- [ ] Database migrations applied
+- [ ] Database services started first
+- [ ] Database migrations applied successfully  
+- [ ] Demo data seeded
+- [ ] API services deployed successfully
+- [ ] Background worker started
 - [ ] Health checks passing
+- [ ] Dashboard accessible and functioning
 - [ ] Load balancer configured
 - [ ] DNS records updated
 
 ### Post-deployment
-- [ ] End-to-end testing performed
+- [ ] End-to-end API testing performed
+- [ ] Dashboard functionality verified
+- [ ] Tenant creation and API key generation tested
+- [ ] Chat completion proxy tested
 - [ ] Monitoring alerts configured
 - [ ] Documentation updated
 - [ ] Team notified of changes
@@ -633,9 +702,15 @@ npx prisma migrate status
 ## 🆘 Support
 
 For deployment issues:
-- Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- Check [README.md](README.md) troubleshooting section
 - Review logs for error messages
 - Create GitHub issue with deployment details
 - Include environment configuration (redacted secrets)
+
+**Common Setup Issues:**
+- Missing OPA installation causes policy bundle build failures
+- Missing `VITE_ADMIN_API_KEY` in dashboard `.env` causes dashboard crashes
+- Wrong step order (migrations before database startup) causes connection errors
+- Missing `env_file` in docker-compose.yml causes environment variable issues
 
 Remember to never commit secrets to version control and always use environment variables for sensitive configuration!
