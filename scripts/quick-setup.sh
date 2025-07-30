@@ -30,7 +30,10 @@ if [ ! -f src/dashboard/.env ]; then
         echo "❌ Error: ADMIN_API_KEY not found or empty in .env file."
         exit 1
     fi
-    printf 'VITE_ADMIN_API_KEY="%s"\n' "$ADMIN_API_KEY_VALUE" > src/dashboard/.env
+    cat > src/dashboard/.env << EOF
+VITE_ADMIN_API_KEY=${ADMIN_API_KEY_VALUE//\"/}
+VITE_API_BASE_URL=
+EOF
 fi
 
 # Start services
@@ -40,5 +43,8 @@ sleep 5
 # Setup database
 npx prisma migrate dev --name init
 npm run seed
+
+# Build dashboard with environment variables
+npm run build
 
 echo "✅ Setup complete! Run 'npm run dev' to start"

@@ -76,6 +76,8 @@ npm run demo
 - ✅ Demo shows an AI request being tracked
 - ✅ Budget shows $0.02 usage
 
+**Note:** The setup script automatically creates `src/dashboard/.env` with the required `VITE_ADMIN_API_KEY` and `VITE_API_BASE_URL` variables.
+
 ### Next Steps
 - [Create your first tenant](#tenant-management) 
 - [Set custom budgets](#budget-management)  
