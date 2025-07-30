@@ -40,134 +40,99 @@ A **lightning-fast FinOps control plane for AI APIs**—a drop‑in API gateway 
 
 ---
 
-## 🚀 Quick Start (10 minutes)
+## 🚀 Quick Start (2 minutes)
 
-### Prerequisites
-- Node.js 18+
-- Docker & Docker Compose
-- Git
-
-### 1. Clone & Install Dependencies
-
+### One-Command Setup
 ```bash
 git clone https://github.com/budgetguard-ai/budgetguard-core.git
 cd budgetguard-core
-npm install
+npm install && npm run setup
 ```
 
-### 2. Install OPA (Open Policy Agent)
-
+### Add Your API Keys
+Edit the `.env` file that was created:
 ```bash
-# Download and install OPA
-export OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
-curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static
-chmod +x opa
-
-# Install globally (use sudo if needed, or install to ~/bin and add to PATH)
-sudo mv opa /usr/local/bin/opa
-
-# Verify installation
-opa version
-```
-
-### 3. Configure Environment Variables
-
-```bash
-# Copy example environment file
-cp .env.example .env
-```
-
-**Edit `.env` and set these REQUIRED variables:**
-
-```bash
-# API Keys (get these from your provider dashboards)
+# Required - get this from your AI provider dashboard
 OPENAI_KEY=sk-your-openai-key-here
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
-GOOGLE_API_KEY=your-google-api-key-here
 
-# Admin Authentication
-ADMIN_API_KEY=your-secure-admin-key-here
+ADMIN_API_KEY=your-secure-admin-key-here  # any secure string
 
-# Budget & Rate Limiting (optional - has sensible defaults)
-DEFAULT_BUDGET_USD=50
-MAX_REQS_PER_MIN=100
+# Optional - for other providers
+ANTHROPIC_API_KEY=sk-ant-your-key
+GOOGLE_API_KEY=your-google-key
 ```
 
-**For the dashboard, also create environment file:**
-
+### Start & Test
 ```bash
-# Create dashboard environment file
-cd src/dashboard
-cp .env.example .env || echo "VITE_ADMIN_API_KEY=your-secure-admin-key-here" > .env
-cd ../..
+# Start everything
+npm run dev
+
+# In another terminal - test with a real AI call
+npm run demo
 ```
 
-Make sure `VITE_ADMIN_API_KEY` matches your `ADMIN_API_KEY` from the main `.env` file.
+**Success indicators:**
+- ✅ Dashboard loads at http://localhost:3000/dashboard  
+- ✅ Demo shows an AI request being tracked
+- ✅ Budget shows $0.02 usage
 
-### 4. Build Policy Bundle
+### Next Steps
+- [Create your first tenant](#tenant-management) 
+- [Set custom budgets](#budget-management)  
+- [Deploy to production](DEPLOYMENT.md)
 
+## ✅ Verify It's Working
+
+After setup, you should see:
+
+1. **Dashboard loads** → http://localhost:3000/dashboard
+   - Shows system health as "green"
+   - Shows demo tenant with $0.00 usage
+
+2. **Demo request works** → `npm run demo` 
+   - Creates a tenant
+   - Makes an AI call  
+   - Shows ~$0.02 usage in dashboard
+
+3. **Budget enforcement works** → Try exceeding the $50 default budget
+   - Requests get blocked with "Budget exceeded" error
+   - Dashboard shows red warning
+
+**If something's not working:**
+- Check `docker logs budgetguard-api` for errors
+- Verify your `.env` file has valid API keys
+- Run `curl http://localhost:3000/health` to check server status
+
+## 🔧 Common Issues
+
+### "OPA command not found"
 ```bash
-bash scripts/build-opa-wasm.sh
+# The setup script should handle this, but if it fails:
+curl -L -o opa https://github.com/open-policy-agent/opa/releases/latest/download/opa_linux_amd64_static
+chmod +x opa && sudo mv opa /usr/local/bin/opa
 ```
 
-### 5. Start Database Services
-
+### "Dashboard shows connection refused"  
 ```bash
-# Start PostgreSQL and Redis
+# Check your admin key matches in both files:
+grep ADMIN_API_KEY .env
+grep VITE_ADMIN_API_KEY src/dashboard/.env
+# They should be the same
+```
+
+### "Database connection failed"
+```bash
+# Restart the database
+docker compose down
 docker compose up -d postgres redis
-
-# Wait a few seconds for database to be ready
 sleep 5
-```
-
-### 6. Run Database Migrations & Seed Data
-
-```bash
-# Run migrations
 npx prisma migrate dev
-
-# Seed with demo data and model pricing
-npm run seed
 ```
 
-### 7. Start the Full Application
-
-```bash
-# Start all services (API, Postgres, Redis)
-docker compose up --build
-
-# In a separate terminal, start the background worker
-npm run worker
-```
-
-### 8. Test Your Installation
-
-**Dashboard:** http://localhost:3000/dashboard
-**API Docs:** http://localhost:3000/docs
-
-**Create a tenant and API key:**
-```bash
-# Create a tenant
-curl -X POST http://localhost:3000/admin/tenant \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Key: your-secure-admin-key-here" \
-  -d '{"name": "demo", "displayName": "Demo Tenant"}'
-
-# Create an API key (replace "2" with the returned tenant ID)
-curl -X POST http://localhost:3000/admin/tenant/2/apikeys \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Key: your-secure-admin-key-here" \
-  -d '{"name": "test-key"}'
-```
-
-**Test the gateway:**
-```bash
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: demo" \
-  -H "X-API-Key: returned-api-key-from-above" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello, BudgetGuard!"}]}'
-```
+### "Invalid API key" errors
+- Make sure your OpenAI/Anthropic keys are valid
+- Check the keys don't have extra spaces or quotes
+- Try the keys directly with the provider APIs first
 
 ---
 

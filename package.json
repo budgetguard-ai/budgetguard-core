@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "predev": "bash scripts/ensure-opa-wasm.sh",
-    "dev": "nodemon --exec ts-node src/server.ts",
+    "dev": "nodemon --exec \"node --loader ts-node/esm src/server.ts\"",
     "build": "tsc -p tsconfig.json && npm run build:dashboard",
     "build:dashboard": "cd src/dashboard && npm install && npm run build",
     "dev:dashboard": "cd src/dashboard && npm run dev",
@@ -19,6 +19,8 @@
     "test": "vitest run",
     "seed": "node --loader ts-node/esm prisma/seed.ts",
     "test:setup": "prisma migrate reset --force && npm run seed",
+    "setup": "bash scripts/quick-setup.sh",
+    "demo": "node scripts/demo-test.js",
     "prepare": "husky install",
     "commitlint": "commitlint",
     "postinstall": "npm run prepare"
@@ -31,6 +33,7 @@
     "@open-policy-agent/opa-wasm": "^1.2.0",
     "@prisma/client": "^5.14.0",
     "@types/bcrypt": "^6.0.0",
+    "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "fastify": "^5.4.0",
     "pino": "^9.7.0",
@@ -38,6 +41,10 @@
     "redis": "^5.5.6",
     "tiktoken": "^1.0.21",
     "ts-node": "10.9.2"
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
