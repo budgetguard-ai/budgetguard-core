@@ -8,7 +8,9 @@ services:
       - DATABASE_URL=postgres://postgres:secret@postgres:5432/budgetguard
       - REDIS_URL=redis://redis:6379
     ports:
-      - "3000:3000" 
+      - "3000:3000"
+    env_file:
+      - .env
   redis:
     image: redis:7-alpine
     ports:

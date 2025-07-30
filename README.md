@@ -40,82 +40,136 @@ A **lightning-fast FinOps control plane for AI APIs**—a drop‑in API gateway 
 
 ---
 
-## Quick Start (5 minutes)
+## 🚀 Quick Start (10 minutes)
 
-1. **Clone & enter the repo**
+### Prerequisites
+- Node.js 18+
+- Docker & Docker Compose
+- Git
 
-   ```bash
-   git clone https://github.com/budgetguard-ai/budgetguard-core.git
-   cd budgetguard-core
-   ```
-
-2. **Install deps & build the policy bundle**
-
-   ```bash
-   npm install
-   bash scripts/build-opa-wasm.sh
-   ```
-
-3. **Run migrations & seed demo data**
-
-   ```bash
-   npx prisma migrate dev
-   npm run seed
-   ```
-
-4. **Configure secrets**
-   Copy `.env.example` ➜ `.env` (or export manually):
-
-   | Variable             | Description                                            |
-   | -------------------- | ------------------------------------------------------ |
-   | `OPENAI_KEY`         | Your OpenAI API key (for GPT models)                  |
-   | `ANTHROPIC_API_KEY`  | Your Anthropic API key (for Claude models)            |
-   | `GOOGLE_API_KEY`     | Your Google API key (for Gemini models)               |
-   | `ADMIN_API_KEY`      | Key for admin routes                                   |
-   | `MAX_REQS_PER_MIN`   | Default per‑tenant rate limit (use `0` for unlimited) |
-   | `DEFAULT_BUDGET_USD` | Default tenant monthly budget                          |
-   | `BUDGET_PERIODS`     | Comma‑separated budget windows (e.g. `monthly,weekly`) |
-
-5. **Boot everything**
-
-   ```bash
-   docker compose up --build     # Postgres, Redis, API
-   ```
-
-6. **Launch the background worker** (new terminal)
-
-   ```bash
-   npm run worker
-   ```
-
-7. **Test the gateway**
-
-   * Browse Swagger UI → [http://localhost:3000/docs](http://localhost:3000/docs)
-  * Curl a response:
-
-### Example Requests
-
-Test the gateway with these sample `curl` commands:
+### 1. Clone & Install Dependencies
 
 ```bash
-curl -X POST http://localhost:3000/v1/responses \
-   -H "Content-Type: application/json" \
-   -H "Authorization: Bearer <OPENAI_KEY>" \
-   -H "X-Tenant-Id: demo" \
-   -H "X-API-Key: <TENANT_API_KEY>" \
-   -d '{"model":"gpt-4.1","input":"hello"}'
+git clone https://github.com/budgetguard-ai/budgetguard-core.git
+cd budgetguard-core
+npm install
 ```
 
+### 2. Install OPA (Open Policy Agent)
+
+```bash
+# Download and install OPA
+export OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
+curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static
+chmod +x opa
+
+# Install globally (use sudo if needed, or install to ~/bin and add to PATH)
+sudo mv opa /usr/local/bin/opa
+
+# Verify installation
+opa version
+```
+
+### 3. Configure Environment Variables
+
+```bash
+# Copy example environment file
+cp .env.example .env
+```
+
+**Edit `.env` and set these REQUIRED variables:**
+
+```bash
+# API Keys (get these from your provider dashboards)
+OPENAI_KEY=sk-your-openai-key-here
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+GOOGLE_API_KEY=your-google-api-key-here
+
+# Admin Authentication
+ADMIN_API_KEY=your-secure-admin-key-here
+
+# Budget & Rate Limiting (optional - has sensible defaults)
+DEFAULT_BUDGET_USD=50
+MAX_REQS_PER_MIN=100
+```
+
+**For the dashboard, also create environment file:**
+
+```bash
+# Create dashboard environment file
+cd src/dashboard
+cp .env.example .env || echo "VITE_ADMIN_API_KEY=your-secure-admin-key-here" > .env
+cd ../..
+```
+
+Make sure `VITE_ADMIN_API_KEY` matches your `ADMIN_API_KEY` from the main `.env` file.
+
+### 4. Build Policy Bundle
+
+```bash
+bash scripts/build-opa-wasm.sh
+```
+
+### 5. Start Database Services
+
+```bash
+# Start PostgreSQL and Redis
+docker compose up -d postgres redis
+
+# Wait a few seconds for database to be ready
+sleep 5
+```
+
+### 6. Run Database Migrations & Seed Data
+
+```bash
+# Run migrations
+npx prisma migrate dev
+
+# Seed with demo data and model pricing
+npm run seed
+```
+
+### 7. Start the Full Application
+
+```bash
+# Start all services (API, Postgres, Redis)
+docker compose up --build
+
+# In a separate terminal, start the background worker
+npm run worker
+```
+
+### 8. Test Your Installation
+
+**Dashboard:** http://localhost:3000/dashboard
+**API Docs:** http://localhost:3000/docs
+
+**Create a tenant and API key:**
+```bash
+# Create a tenant
+curl -X POST http://localhost:3000/admin/tenant \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your-secure-admin-key-here" \
+  -d '{"name": "demo", "displayName": "Demo Tenant"}'
+
+# Create an API key (replace "2" with the returned tenant ID)
+curl -X POST http://localhost:3000/admin/tenant/2/apikeys \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your-secure-admin-key-here" \
+  -d '{"name": "test-key"}'
+```
+
+**Test the gateway:**
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
-   -H "Content-Type: application/json" \
-   -H "Authorization: Bearer <OPENAI_KEY>" \
-   -H "X-Tenant-Id: demo" \
-   -H "X-API-Key: <TENANT_API_KEY>" \
-   -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: demo" \
+  -H "X-API-Key: returned-api-key-from-above" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello, BudgetGuard!"}]}'
 ```
 
-That's it—you now have full budget & rate‑limit protection in front of your AI providers!
+---
 
 ## 🎛️ Management Dashboard
 
@@ -136,6 +190,29 @@ Once your server is running, visit: **http://localhost:3000/dashboard**
 ![BudgetGuard Dashboard](docs/images/dashboard-overview.png)
 
 *More screenshots and detailed dashboard documentation: [src/dashboard/README.md](src/dashboard/README.md)*
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"OPA command not found"**
+- Make sure you completed step 2 (Install OPA)
+- Verify with `opa version`
+
+**"Dashboard shows connection refused"**  
+- Ensure `VITE_ADMIN_API_KEY` is set in `src/dashboard/.env`
+- Make sure it matches your main `ADMIN_API_KEY`
+- Rebuild: `docker compose down && docker compose up --build`
+
+**"Database connection failed"**
+- Start database first: `docker compose up -d postgres redis`
+- Wait a few seconds before running migrations
+
+**"Worker fails with TypeScript error"**
+- Install tsx: `npm install -g tsx`
+- Run with: `tsx src/worker.ts`
 
 ---
 
@@ -166,7 +243,7 @@ Once your server is running, visit: **http://localhost:3000/dashboard**
 | `POST` | `/v1/responses`        | Forward to AI provider responses   |
 | `GET`  | `/health`              | Liveness probe                     |
 
-Required headers: `X-Tenant-Id`, `X-API-Key` (or rely on server‑side `OPENAI_KEY`). Usage is logged in `UsageLedger`.
+Required headers: `X-Tenant-Id`, `X-API-Key`. Usage is logged in `UsageLedger`.
 
 ### Admin Endpoints (auth via `X-Admin-Key`)
 
@@ -246,7 +323,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines. We follow the Co
 
 ## License
 
-Apache License 2.0. See `LICENSE`.
+Apache License 2.0. See `LICENSE`.
 
 ---
 
