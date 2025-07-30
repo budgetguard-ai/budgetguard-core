@@ -1115,7 +1115,10 @@ export async function buildServer() {
         });
         return reply.send(tenant);
       } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
           return reply.code(400).send({ error: "Tenant already exists" });
         }
         return reply.code(400).send({ error: "Unable to create tenant" });
@@ -3191,7 +3194,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const app = await buildServer();
       const port = Number(process.env.PORT) || 3000;
       const host = process.env.HOST || "0.0.0.0";
-      
+
       await app.listen({ port, host });
       console.log(`🚀 Server running at http://${host}:${port}`);
       console.log(`📊 Dashboard: http://${host}:${port}/dashboard`);
@@ -3201,6 +3204,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(1);
     }
   };
-  
-  start();
+
+  void start();
 }

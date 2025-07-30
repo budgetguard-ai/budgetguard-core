@@ -7,7 +7,7 @@ const compat = new FlatCompat();
 
 export default [
   {
-    ignores: ['node_modules', 'dist', 'build', 'coverage', 'src/dashboard/dist'],
+    ignores: ['node_modules', 'dist', 'build', 'coverage', 'src/dashboard/dist', 'scripts'],
   },
   eslintJs.configs.recommended,
   ...compat.config({
