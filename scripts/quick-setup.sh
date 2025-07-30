@@ -6,9 +6,26 @@ echo "🚀 Setting up BudgetGuard..."
 # Install OPA automatically
 if ! command -v opa &> /dev/null; then
     echo "📦 Installing OPA..."
-    export OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
-    curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static
-    chmod +x opa && sudo mv opa /usr/local/bin/opa
+    OPA_VERSION=$(curl -s https://api.github.com/repos/open-policy-agent/opa/releases/latest | grep tag_name | cut -d '"' -f 4)
+    echo "Detected OPA version: $OPA_VERSION"
+    
+    if [ -z "$OPA_VERSION" ]; then
+        echo "❌ Failed to detect OPA version. Using fallback v0.70.0"
+        OPA_VERSION="v0.70.0"
+    fi
+    
+    echo "Downloading OPA $OPA_VERSION..."
+    curl -L -o /tmp/opa "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static"
+    
+    # Verify download
+    if [ ! -f /tmp/opa ] || [ ! -s /tmp/opa ]; then
+        echo "❌ Failed to download OPA binary"
+        exit 1
+    fi
+    
+    chmod +x /tmp/opa && sudo mv /tmp/opa /usr/local/bin/opa
+    echo "✅ OPA installed successfully"
+    opa version
 fi
 
 # Build policy bundle
