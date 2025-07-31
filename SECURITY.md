@@ -1,343 +1,152 @@
 # Security Policy
 
-## 🔒 Security Overview
-
-BudgetGuard handles sensitive data including API keys, usage data, and financial information. This document outlines our security practices and how to report security vulnerabilities.
-
-## 🛡️ Security Features
+## Security Features
 
 ### Authentication & Authorization
-- **Admin API Key Protection** - All admin endpoints require `X-Admin-Key` header (stored as environment variable)
-- **Tenant API Keys** - Per-tenant API keys for client authentication, hashed with bcrypt (cost factor 12)
-- **Key Prefix Indexing** - 8-character prefixes enable efficient key lookup before hash comparison
+- **Admin API Keys** - All admin endpoints require `X-Admin-Key` header
+- **Tenant API Keys** - Per-tenant keys, hashed with bcrypt (cost factor 12)
 - **Request Validation** - Input validation on all endpoints
 - **Rate Limiting** - Per-tenant rate limiting to prevent abuse
 
 ### Data Protection
-- **Tenant API Key Hashing** - Tenant API keys stored as bcrypt hashes (never retrievable as plaintext)
-- **Admin Key Environment Storage** - Admin API key stored securely in environment variables
-- **Audit Logging** - All requests logged to immutable `UsageLedger` with API key IDs (not keys)
+- **Key Hashing** - Tenant API keys stored as bcrypt hashes (never plaintext)
+- **Audit Logging** - All requests logged to immutable `UsageLedger`
 - **Environment Isolation** - Secrets managed via environment variables
-- **Database Security** - Parameterized queries prevent SQL injection
+- **SQL Injection Protection** - Parameterized queries only
 
-### Infrastructure Security
-- **Docker Isolation** - Services run in isolated containers
-- **Network Segmentation** - Internal services communicate via private networks
-- **Minimal Attack Surface** - Only necessary ports exposed
-
-## 🔐 Security Best Practices
+## Security Best Practices
 
 ### For Administrators
 
-1. **Strong Admin Keys**
-   ```bash
-   # Generate secure admin key
-   openssl rand -hex 32
-   ```
+**Strong Admin Keys:**
+```bash
+# Generate secure admin key
+openssl rand -hex 32
+```
 
-2. **Environment Security**
-   ```bash
-   # Never commit secrets
-   echo ".env" >> .gitignore
-   
-   # Use secure environment variable management
-   export ADMIN_API_KEY="$(openssl rand -hex 32)"
-   ```
+**Environment Security:**
+```bash
+# Never commit secrets
+echo ".env" >> .gitignore
 
-3. **Database Security**
-   ```bash
-   # Use strong database passwords
-   export DB_PASSWORD="$(openssl rand -base64 32)"
-   
-   # Enable SSL connections
-   export DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
-   ```
+# Use secure environment variables
+export ADMIN_API_KEY="$(openssl rand -hex 32)"
+export DB_PASSWORD="$(openssl rand -base64 32)"
+```
 
-4. **Regular Updates**
-   ```bash
-   # Keep dependencies updated
-   npm audit fix
-   
-   # Update base images
-   docker pull node:18-alpine
-   ```
-
-### For Developers
-
-1. **Code Security**
-   - Never hardcode secrets in source code
-   - Use parameterized queries for database access
-   - Validate all input data
-   - Handle errors gracefully without exposing internals
-
-2. **Dependency Management**
-   ```bash
-   # Check for vulnerabilities
-   npm audit
-   
-   # Review dependencies before adding
-   npm ls --depth=0
-   ```
-
-3. **Testing**
-   ```bash
-   # Run security tests
-   npm run test:security  # (when available)
-   
-   # Test with invalid inputs
-   npm run test:fuzzing   # (when available)
-   ```
+**Database Security:**
+```bash
+# Enable SSL connections
+export DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
+```
 
 ### For Users
 
-1. **API Key Security**
-   - **Tenant API Keys**: Created via admin API, displayed only once (hashed in database)
-   - **Key Rotation**: Use admin endpoints to create new keys and deactivate old ones
-   - **Storage**: Store API keys securely (environment variables, secrets manager)
-   - **Environment Separation**: Use different keys for different environments
-   - **Logging**: Never log API keys in application logs or error messages
+**API Key Security:**
+- Store keys securely (environment variables, secrets manager)
+- Use different keys for different environments
+- Never log API keys in application logs
+- Rotate keys regularly via admin API
 
-2. **Network Security**
-   - Use HTTPS for all API calls
-   - Implement proper firewall rules
-   - Monitor API usage for anomalies
+**API Key Rotation:**
+```bash
+# Create new tenant API key
+curl -X POST https://your-domain.com/admin/tenant/1/apikeys \
+  -H "X-Admin-Key: $ADMIN_API_KEY"
 
-3. **API Key Rotation**
-   ```bash
-   # Create new tenant API key via admin API
-   curl -X POST https://your-budgetguard.com/admin/tenant/1/apikeys \
-     -H "X-Admin-Key: $ADMIN_API_KEY" \
-     -H "Content-Type: application/json"
-   
-   # Deactivate old API key
-   curl -X DELETE https://your-budgetguard.com/admin/apikey/OLD_KEY_ID \
-     -H "X-Admin-Key: $ADMIN_API_KEY"
-   ```
+# Deactivate old key via admin interface
+```
 
-4. **Access Control**
-   ```bash
-   # Example secure API call with tenant key
-   curl -X POST https://your-budgetguard.com/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer $OPENAI_KEY" \
-     -H "X-Tenant-Id: your-tenant" \
-     -H "X-API-Key: $TENANT_API_KEY" \
-     -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
-   ```
-
-## 🚨 Vulnerability Reporting
+## Vulnerability Reporting
 
 ### Supported Versions
-
-We provide security updates for the following versions:
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | ✅ Yes             |
-| 0.x.x   | ❌ No              |
+| Version | Supported |
+|---------|-----------|
+| 1.x.x   | ✅ Yes    |
+| 0.x.x   | ❌ No     |
 
 ### How to Report
+**Do NOT create public GitHub issues for security vulnerabilities.**
 
-We take security vulnerabilities seriously. Please follow responsible disclosure:
+1. Report security issues via GitHub Security Advisories
+2. Include: description, reproduction steps, impact assessment
+3. We'll respond within 24-72 hours
 
-1. **Do NOT** create public GitHub issues for security vulnerabilities
-2. **Email** security reports to: `security@budgetguard.ai`
-3. **Include** the following information:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact assessment
-   - Suggested fix (if available)
+## Production Hardening
 
-### Response Timeline
-
-- **24 hours**: Initial response acknowledging receipt
-- **72 hours**: Initial vulnerability assessment
-- **7 days**: Detailed response with timeline for fix
-- **30 days**: Target for security patch release
-
-### Disclosure Policy
-
-- We will acknowledge your contribution if you wish
-- We will coordinate disclosure timing with you
-- We will provide updates on fix progress
-- We may offer recognition in release notes
-
-## 🛠️ Security Configuration
-
-### Production Hardening
-
-1. **Environment Variables**
-   ```bash
-   # Required security settings
-   NODE_ENV=production
-   
-   # Admin API key (plaintext, stored in environment)
-   ADMIN_API_KEY="secure-random-key-here"  # Use: openssl rand -hex 32
-   
-   # Database security
-   DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
-   
-   # Redis security (if exposed)
-   REDIS_URL="redis://user:pass@host:6379"
-   
-   # Note: Tenant API keys are managed via admin API and stored hashed in database
-   ```
-
-2. **Network Security**
-   ```yaml
-   # Docker Compose example
-   services:
-     api:
-       ports:
-         - "3000:3000"  # Only expose necessary ports
-       networks:
-         - internal     # Use internal networks
-     
-     postgres:
-       # Don't expose database port externally
-       networks:
-         - internal
-   ```
-
-3. **HTTPS Configuration**
-   ```nginx
-   # Nginx SSL configuration
-   server {
-       listen 443 ssl http2;
-       ssl_certificate /path/to/cert.pem;
-       ssl_certificate_key /path/to/key.pem;
-       ssl_protocols TLSv1.2 TLSv1.3;
-       ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512;
-       
-       location / {
-           proxy_pass http://budgetguard-api:3000;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
-
-### Security Headers
-
-Add these headers for enhanced security:
-
-```javascript
-// Example Fastify security headers
-app.register(require('@fastify/helmet'), {
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"]
-    }
-  },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true
-  }
-});
+### Required Environment Variables
+```bash
+NODE_ENV=production
+ADMIN_API_KEY="secure-random-key-here"  # Use: openssl rand -hex 32
+DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
 ```
 
-## 🔍 Security Monitoring
+### Network Security
+```yaml
+# Docker Compose - only expose necessary ports
+services:
+  api:
+    ports:
+      - "3000:3000"
+    networks:
+      - internal
+
+  postgres:
+    # Don't expose database externally
+    networks:
+      - internal
+```
+
+### HTTPS Configuration
+Use reverse proxy (nginx/traefik) with SSL termination:
+```nginx
+server {
+    listen 443 ssl http2;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    # Add your SSL certificates
+}
+```
+
+## Security Monitoring
 
 ### Audit Logging
+All requests logged to `UsageLedger` table with:
+- Tenant ID and model used
+- Token counts and costs
+- Timestamps and request metadata
 
-All requests are logged to the `UsageLedger` table:
-
-```sql
--- Example audit log query
-SELECT 
-  tenant_id,
-  model,
-  input_tokens,
-  output_tokens,
-  cost_usd,
-  created_at
-FROM "UsageLedger"
-WHERE tenant_id = 'suspicious-tenant'
-  AND created_at > NOW() - INTERVAL '1 hour'
-ORDER BY created_at DESC;
-```
-
-### Anomaly Detection
-
-Monitor for unusual patterns:
-
-```bash
-# High usage from single tenant
-# Unusual request patterns
-# Failed authentication attempts
-# Budget threshold breaches
-```
-
-### Security Metrics
-
-Key metrics to monitor:
-
+### Key Metrics to Monitor
 - Request rate per tenant
-- Failed authentication attempts
+- Failed authentication attempts  
 - Budget utilization rates
 - Error rates by endpoint
-- Database connection patterns
 
-## 🚫 Security Limitations
+## Security Limitations
 
 ### Known Limitations
-
-1. **AI Provider Security** - Security depends on upstream AI providers
-2. **Network Security** - Requires proper network configuration
-3. **Admin Key Management** - Admin API key stored in plaintext environment variable
-4. **Key Management** - Users responsible for secure key storage
-5. **Rate Limiting** - Can be bypassed with multiple tenants
+1. **AI Provider Security** - Depends on upstream providers
+2. **Admin Key Storage** - Stored in environment variable (plaintext)
+3. **Network Security** - Requires proper infrastructure configuration
+4. **Rate Limiting** - Can be bypassed with multiple tenants
 
 ### Security Model
+- **Tenant Keys**: Hashed in database, rotated via admin API
+- **Admin Keys**: Environment variable, manually managed
+- **Provider Keys**: Passed through to AI providers
 
-**Hybrid Key Management Approach:**
-- **Tenant API Keys**: Hashed with bcrypt, stored in database, rotated via admin API
-- **Admin API Key**: Stored as environment variable, manually managed, full system access
-
-### Assumptions
-
-- Users will secure their API keys properly
-- Network infrastructure is properly configured
-- Database and Redis are secured at infrastructure level
-- Regular security updates will be applied
-
-## 📚 Security Resources
-
-### External Security Guides
-
-- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-- [Node.js Security Best Practices](https://nodejs.org/en/docs/guides/security/)
-- [Docker Security](https://docs.docker.com/engine/security/)
-- [PostgreSQL Security](https://www.postgresql.org/docs/current/security.html)
-
-### Security Tools
+## Security Tools
 
 ```bash
 # Dependency scanning
 npm audit
 
-# Container scanning
+# Container scanning  
 docker scan budgetguard/core:latest
 
-# Static analysis
-npx eslint . --ext .ts
-
-# Environment validation
-npx dotenv-vault audit
+# Keep dependencies updated
+npm audit fix
 ```
-
-## 📞 Security Contacts
-
-- **Security Email**: security@budgetguard.ai
-- **General Contact**: support@budgetguard.ai
-- **GitHub Issues**: For non-security bugs only
 
 ---
 
-**Remember**: Security is a shared responsibility. While we work hard to secure BudgetGuard, proper deployment and configuration are essential for a secure installation.
+**Security is a shared responsibility.** Proper deployment and configuration are essential for a secure installation.
