@@ -154,7 +154,7 @@ const UsageHistory: React.FC = () => {
         row.model,
         row.promptTok.toString(),
         row.compTok.toString(),
-        `$${parseFloat(row.usd).toFixed(4)}`,
+        `$${parseFloat(row.usd)}`,
       ]),
     ]
       .map((row) => row.join(","))
@@ -439,7 +439,7 @@ const UsageHistory: React.FC = () => {
                               variant="body2"
                               sx={{ fontWeight: 600 }}
                             >
-                              ${parseFloat(row.usd).toFixed(4)}
+                              ${parseFloat(row.usd)}
                             </Typography>
                           </TableCell>
                         </TableRow>
