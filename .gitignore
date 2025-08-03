@@ -11,3 +11,5 @@ CLAUDE.md
 *.log
 dist/server.js
 fly.toml
+.DS_Store
+**/.DS_Store
