@@ -1,97 +1,97 @@
 import { createTheme } from "@mui/material/styles";
 
-// Material Design 3 color tokens
+// Liquid Glass Design color tokens
 const lightColorTokens = {
   primary: {
-    main: "#6750A4",
-    light: "#EADDFF",
-    dark: "#21005D",
+    main: "#1C1C1E",
+    light: "rgba(28, 28, 30, 0.1)",
+    dark: "#000000",
     contrastText: "#FFFFFF",
   },
   secondary: {
-    main: "#625B71",
-    light: "#E8DEF8",
-    dark: "#1D192B",
+    main: "#8E8E93",
+    light: "rgba(142, 142, 147, 0.1)",
+    dark: "#636366",
     contrastText: "#FFFFFF",
   },
   error: {
-    main: "#BA1A1A",
-    light: "#FFDAD6",
-    dark: "#410002",
+    main: "#FF3B30",
+    light: "rgba(255, 59, 48, 0.1)",
+    dark: "#D70015",
     contrastText: "#FFFFFF",
   },
   warning: {
-    main: "#7D5260",
-    light: "#FFD8E4",
-    dark: "#31111D",
+    main: "#FF9500",
+    light: "rgba(255, 149, 0, 0.1)",
+    dark: "#FF8C00",
     contrastText: "#FFFFFF",
   },
   info: {
-    main: "#006A6B",
-    light: "#4CFAFF",
-    dark: "#002020",
+    main: "#8E8E93",
+    light: "rgba(142, 142, 147, 0.1)",
+    dark: "#636366",
     contrastText: "#FFFFFF",
   },
   success: {
-    main: "#006E1C",
-    light: "#9EFF9C",
-    dark: "#002204",
+    main: "#34C759",
+    light: "rgba(52, 199, 89, 0.1)",
+    dark: "#28A745",
     contrastText: "#FFFFFF",
   },
   background: {
-    default: "#FFFBFE",
-    paper: "#F7F2FA",
+    default: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+    paper: "rgba(255, 255, 255, 0.25)",
   },
   surface: {
-    main: "#FFFBFE",
-    variant: "#E7E0EC",
+    main: "rgba(255, 255, 255, 0.3)",
+    variant: "rgba(248, 250, 252, 0.4)",
   },
 };
 
 const darkColorTokens = {
   primary: {
-    main: "#D0BCFF",
-    light: "#4F378B",
-    dark: "#EADDFF",
-    contrastText: "#21005D",
+    main: "#E0E0E0",
+    light: "rgba(224, 224, 224, 0.1)",
+    dark: "#BDBDBD",
+    contrastText: "#000000",
   },
   secondary: {
-    main: "#CCC2DC",
-    light: "#4A4458",
-    dark: "#E8DEF8",
-    contrastText: "#1D192B",
+    main: "#9E9E9E",
+    light: "rgba(158, 158, 158, 0.1)",
+    dark: "#757575",
+    contrastText: "#FFFFFF",
   },
   error: {
-    main: "#FFB4AB",
-    light: "#93000A",
-    dark: "#FFDAD6",
-    contrastText: "#410002",
+    main: "#FF5252",
+    light: "rgba(255, 82, 82, 0.1)",
+    dark: "#F44336",
+    contrastText: "#FFFFFF",
   },
   warning: {
-    main: "#EFB8C8",
-    light: "#633B48",
-    dark: "#FFD8E4",
-    contrastText: "#31111D",
+    main: "#FFC107",
+    light: "rgba(255, 193, 7, 0.1)",
+    dark: "#FF9800",
+    contrastText: "#000000",
   },
   info: {
-    main: "#4DDADB",
-    light: "#00504F",
-    dark: "#A6F3F3",
-    contrastText: "#002020",
+    main: "#9E9E9E",
+    light: "rgba(158, 158, 158, 0.1)",
+    dark: "#757575",
+    contrastText: "#FFFFFF",
   },
   success: {
-    main: "#82D884",
-    light: "#00530F",
-    dark: "#9EFF9C",
-    contrastText: "#002204",
+    main: "#4CAF50",
+    light: "rgba(76, 175, 80, 0.1)",
+    dark: "#388E3C",
+    contrastText: "#FFFFFF",
   },
   background: {
-    default: "#1C1B1F",
-    paper: "#2B2930",
+    default: "#000000",
+    paper: "rgba(255, 255, 255, 0.1)",
   },
   surface: {
-    main: "#1C1B1F",
-    variant: "#49454F",
+    main: "rgba(255, 255, 255, 0.05)",
+    variant: "rgba(255, 255, 255, 0.08)",
   },
 };
 
@@ -103,7 +103,7 @@ export const lightTheme = createTheme({
   },
   typography: {
     fontFamily: [
-      "Inter",
+      "Manrope",
       "-apple-system",
       "BlinkMacSystemFont",
       '"Segoe UI"',
@@ -160,17 +160,52 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           textTransform: "none",
-          borderRadius: 20,
+          borderRadius: 8,
           fontWeight: 500,
+          transition: "all 0.2s ease-out",
+        },
+        contained: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(0, 0, 0, 0.8)",
+          border: "1px solid rgba(0, 0, 0, 0.9)",
+          color: "#FFFFFF",
+          "&:hover": {
+            background: "rgba(0, 0, 0, 0.9)",
+            borderColor: "rgba(0, 0, 0, 1)",
+          },
+        },
+        outlined: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(255, 255, 255, 0.8)",
+          border: "1px solid rgba(0, 0, 0, 0.2)",
+          color: "rgba(0, 0, 0, 0.87)",
+          "&:hover": {
+            background: "rgba(255, 255, 255, 0.9)",
+            borderColor: "rgba(0, 0, 0, 0.3)",
+          },
+        },
+        text: {
+          color: "rgba(0, 0, 0, 0.87)",
+          "&:hover": {
+            background: "rgba(0, 0, 0, 0.04)",
+          },
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          boxShadow:
-            "0px 1px 3px rgba(0, 0, 0, 0.12), 0px 1px 2px rgba(0, 0, 0, 0.24)",
+          borderRadius: 20,
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.25)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          boxShadow: "0 8px 32px rgba(31, 38, 135, 0.37)",
+          transition: "all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          "&:hover": {
+            transform: "translateY(-2px)",
+            boxShadow: "0 12px 40px rgba(31, 38, 135, 0.5)",
+            background: "rgba(255, 255, 255, 0.35)",
+          },
         },
       },
     },
@@ -178,6 +213,128 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 8,
+          fontWeight: 500,
+        },
+        colorPrimary: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(28, 28, 30, 0.9)",
+          color: "#FFFFFF",
+          border: "1px solid rgba(28, 28, 30, 1)",
+        },
+        colorSecondary: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(142, 142, 147, 0.9)",
+          color: "#FFFFFF",
+          border: "1px solid rgba(142, 142, 147, 1)",
+        },
+        colorSuccess: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(52, 199, 89, 0.9)",
+          color: "#FFFFFF",
+          border: "1px solid rgba(52, 199, 89, 1)",
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.2)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(31, 38, 135, 0.3)",
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.15)",
+          border: "none",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.2)",
+          boxShadow: "0 4px 16px rgba(31, 38, 135, 0.2)",
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 20,
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.25)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          boxShadow: "0 8px 32px rgba(31, 38, 135, 0.37)",
+        },
+      },
+    },
+    MuiBackdrop: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(8px)",
+          background: "rgba(31, 38, 135, 0.1)",
+        },
+      },
+    },
+    MuiMenu: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 12,
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.2)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(31, 38, 135, 0.3)",
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 12,
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.2)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(31, 38, 135, 0.3)",
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          backdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255, 255, 255, 0.2)",
+        },
+        standardWarning: {
+          background: "rgba(255, 152, 0, 0.15)",
+          color: "rgba(0, 0, 0, 0.87)",
+          border: "1px solid rgba(255, 152, 0, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#FF9800",
+          },
+        },
+        standardInfo: {
+          background: "rgba(33, 150, 243, 0.15)",
+          color: "rgba(0, 0, 0, 0.87)",
+          border: "1px solid rgba(33, 150, 243, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#2196F3",
+          },
+        },
+        standardError: {
+          background: "rgba(244, 67, 54, 0.15)",
+          color: "rgba(0, 0, 0, 0.87)",
+          border: "1px solid rgba(244, 67, 54, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#F44336",
+          },
+        },
+        standardSuccess: {
+          background: "rgba(76, 175, 80, 0.15)",
+          color: "rgba(0, 0, 0, 0.87)",
+          border: "1px solid rgba(76, 175, 80, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#4CAF50",
+          },
         },
       },
     },
@@ -193,13 +350,186 @@ export const darkTheme = createTheme({
   typography: lightTheme.typography,
   shape: lightTheme.shape,
   components: {
-    ...lightTheme.components,
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: "none",
+          borderRadius: 8,
+          fontWeight: 500,
+          transition: "all 0.2s ease-out",
+        },
+        contained: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(255, 255, 255, 0.8)",
+          border: "1px solid rgba(255, 255, 255, 0.9)",
+          color: "#000000",
+          "&:hover": {
+            background: "rgba(255, 255, 255, 0.9)",
+            borderColor: "rgba(255, 255, 255, 1)",
+          },
+        },
+        outlined: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(255, 255, 255, 0.05)",
+          border: "1px solid rgba(255, 255, 255, 0.3)",
+          color: "rgba(255, 255, 255, 0.87)",
+          "&:hover": {
+            background: "rgba(255, 255, 255, 0.1)",
+            borderColor: "rgba(255, 255, 255, 0.5)",
+          },
+        },
+        text: {
+          color: "rgba(255, 255, 255, 0.87)",
+          "&:hover": {
+            background: "rgba(255, 255, 255, 0.04)",
+          },
+        },
+      },
+    },
     MuiCard: {
       styleOverrides: {
         root: {
+          borderRadius: 20,
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.1)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          boxShadow: "0 8px 32px rgba(255, 255, 255, 0.1)",
+          transition: "all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          "&:hover": {
+            transform: "translateY(-2px)",
+            boxShadow: "0 12px 40px rgba(255, 255, 255, 0.15)",
+            background: "rgba(255, 255, 255, 0.15)",
+          },
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+          fontWeight: 500,
+        },
+        colorPrimary: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(224, 224, 224, 0.9)",
+          color: "#000000",
+          border: "1px solid rgba(224, 224, 224, 1)",
+        },
+        colorSecondary: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(158, 158, 158, 0.3)",
+          color: "#FFFFFF",
+          border: "1px solid rgba(158, 158, 158, 0.8)",
+          fontWeight: 600,
+        },
+        colorSuccess: {
+          backdropFilter: "blur(20px) saturate(180%)",
+          background: "rgba(76, 175, 80, 0.9)",
+          color: "#FFFFFF",
+          border: "1px solid rgba(76, 175, 80, 1)",
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.08)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(255, 255, 255, 0.1)",
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.05)",
+          border: "none",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.2)",
+          boxShadow: "0 4px 16px rgba(255, 255, 255, 0.1)",
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 20,
+          backdropFilter: "blur(40px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.1)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          boxShadow: "0 8px 32px rgba(255, 255, 255, 0.15)",
+        },
+      },
+    },
+    MuiBackdrop: {
+      styleOverrides: {
+        root: {
+          backdropFilter: "blur(8px)",
+          background: "rgba(0, 0, 0, 0.1)",
+        },
+      },
+    },
+    MuiMenu: {
+      styleOverrides: {
+        paper: {
           borderRadius: 12,
-          boxShadow:
-            "0px 2px 4px rgba(0, 0, 0, 0.3), 0px 4px 8px rgba(0, 0, 0, 0.15)",
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.08)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(255, 255, 255, 0.1)",
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 12,
+          backdropFilter: "blur(25px) saturate(200%)",
+          background: "rgba(255, 255, 255, 0.08)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 8px 32px rgba(255, 255, 255, 0.1)",
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          backdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255, 255, 255, 0.2)",
+        },
+        standardWarning: {
+          background: "rgba(255, 193, 7, 0.15)",
+          color: "rgba(255, 255, 255, 0.87)",
+          border: "1px solid rgba(255, 193, 7, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#FFC107",
+          },
+        },
+        standardInfo: {
+          background: "rgba(158, 158, 158, 0.15)",
+          color: "rgba(255, 255, 255, 0.87)",
+          border: "1px solid rgba(158, 158, 158, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#9E9E9E",
+          },
+        },
+        standardError: {
+          background: "rgba(255, 82, 82, 0.15)",
+          color: "rgba(255, 255, 255, 0.87)",
+          border: "1px solid rgba(255, 82, 82, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#FF5252",
+          },
+        },
+        standardSuccess: {
+          background: "rgba(76, 175, 80, 0.15)",
+          color: "rgba(255, 255, 255, 0.87)",
+          border: "1px solid rgba(76, 175, 80, 0.3)",
+          "& .MuiAlert-icon": {
+            color: "#4CAF50",
+          },
         },
       },
     },
