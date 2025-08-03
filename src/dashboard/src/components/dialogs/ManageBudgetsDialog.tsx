@@ -519,9 +519,7 @@ const ManageBudgetsDialog: React.FC<ManageBudgetsDialogProps> = ({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={isPending}>
-          Close
-        </Button>
+        {/* Close button removed - only Cancel and Save/Update buttons needed */}
       </DialogActions>
     </Dialog>
   );

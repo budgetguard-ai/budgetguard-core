@@ -76,15 +76,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           <img
             src={logoPng}
             alt="BudgetGuard Logo"
-            style={{ width: 48, height: 48 }}
+            style={{
+              width: 56,
+              height: 56,
+              filter: appTheme === "dark" ? "invert(1)" : "none",
+              transition: "filter 0.3s ease",
+            }}
           />
           <Typography
             variant="h4"
             noWrap
             component="div"
             sx={{
-              fontWeight: 600,
-              fontFamily: '"Space Grotesk", sans-serif',
+              fontWeight: 700,
+              fontFamily: '"Urbanist", sans-serif',
             }}
           >
             BudgetGuard
