@@ -193,6 +193,7 @@ async function getTagUsageFromDatabase(
 // Check hierarchical tag budgets
 export async function checkHierarchicalTagBudgets({
   validatedTags,
+  tenant,
   tenantId,
   prisma,
 }: TagBudgetOptions): Promise<TagBudgetCheck[]> {
@@ -225,14 +226,40 @@ export async function checkHierarchicalTagBudgets({
           parentBudget.inheritanceMode === "STRICT" ||
           parentBudget.inheritanceMode === "LENIENT"
         ) {
-          // Add parent budget check
-          const parentUsage = await getTagUsageFromDatabase(
-            tenantId,
-            currentTag.parent.id,
-            parentBudget.startDate || new Date(),
-            parentBudget.endDate || new Date(),
-            prisma,
-          );
+          // Add parent budget check with proper date handling
+          let parentUsage = 0;
+
+          if (parentBudget.period === "daily" || parentBudget.period === "monthly") {
+            // For recurring periods, use the budget data calculation
+            const budgetData = await readBudget({
+              tenant,
+              period: parentBudget.period,
+              prisma,
+              redis: undefined, // Not using Redis cache for hierarchical checks
+              defaultBudget: 0,
+            });
+
+            parentUsage = await getTagUsageFromDatabase(
+              tenantId,
+              currentTag.parent.id,
+              budgetData.startDate,
+              budgetData.endDate,
+              prisma,
+            );
+          } else if (
+            parentBudget.period === "custom" &&
+            parentBudget.startDate &&
+            parentBudget.endDate
+          ) {
+            // For custom periods, use the budget's own dates
+            parentUsage = await getTagUsageFromDatabase(
+              tenantId,
+              currentTag.parent.id,
+              parentBudget.startDate,
+              parentBudget.endDate,
+              prisma,
+            );
+          }
 
           const budgetAmount = parseFloat(parentBudget.amountUsd.toString());
           const weightedUsage =

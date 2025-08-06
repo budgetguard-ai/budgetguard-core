@@ -54,8 +54,14 @@ interface TagWhereClause {
   parentId?: number;
 }
 
+interface AuthContext {
+  keyAuth: { id: number; tenantId: number };
+  tenant: { id: number; name: string };
+}
+
 interface RequestWithTags extends FastifyRequest {
   validatedTags?: ValidatedTag[];
+  authContext?: AuthContext;
 }
 
 interface TagUpdateData {
@@ -1387,6 +1393,46 @@ export async function buildServer() {
     if (!process.env.ADMIN_API_KEY || key !== process.env.ADMIN_API_KEY) {
       return reply.code(401).send({ error: "Unauthorized" });
     }
+  };
+
+  // Shared authentication middleware for AI proxy endpoints
+  const aiProxyAuth = async (req: FastifyRequest, reply: FastifyReply) => {
+    const prisma = await getPrisma();
+
+    // Extract API key from headers
+    let supplied: string | undefined;
+    const auth = req.headers.authorization as string | undefined;
+    if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
+    if (!supplied && req.headers["x-api-key"]) {
+      supplied = req.headers["x-api-key"] as string;
+    }
+
+    // Require authentication for all AI proxy requests
+    if (!supplied) {
+      return reply.code(401).send({
+        error:
+          "Authentication required. Provide API key via Authorization header or X-API-Key header",
+      });
+    }
+
+    // Authenticate and get tenant context
+    const keyAuth = await authenticateApiKey(supplied, prisma);
+    if (!keyAuth) {
+      return reply.code(401).send({ error: "Invalid API key" });
+    }
+
+    const tenantRec = await prisma.tenant.findUnique({
+      where: { id: keyAuth.tenantId },
+    });
+    if (!tenantRec) {
+      return reply.code(401).send({ error: "Tenant not found" });
+    }
+
+    // Add auth context to request for use by route handlers
+    (req as RequestWithTags).authContext = {
+      keyAuth,
+      tenant: tenantRec,
+    };
   };
 
   app.post(

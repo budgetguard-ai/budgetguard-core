@@ -59,6 +59,7 @@ async function main() {
           }>;
 
           // Create RequestTag entries for each tag and update usage cache
+          const usdValue = parseFloat(data.usd); // Parse once outside the loop
           for (const tag of tags) {
             await prisma.requestTag.create({
               data: {
@@ -70,7 +71,7 @@ async function main() {
             });
 
             // Increment tag usage cache for both daily and monthly periods
-            const weightedUsage = parseFloat(data.usd) * tag.weight;
+            const weightedUsage = usdValue * tag.weight;
             const tenantName = data.tenant;
 
             // Increment daily usage (shorter TTL for more frequent updates)
