@@ -229,7 +229,10 @@ export async function checkHierarchicalTagBudgets({
           // Add parent budget check with proper date handling
           let parentUsage = 0;
 
-          if (parentBudget.period === "daily" || parentBudget.period === "monthly") {
+          if (
+            parentBudget.period === "daily" ||
+            parentBudget.period === "monthly"
+          ) {
             // For recurring periods, use the budget data calculation
             const budgetData = await readBudget({
               tenant,
