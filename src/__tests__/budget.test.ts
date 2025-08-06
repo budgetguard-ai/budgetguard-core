@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 import type { FastifyInstance } from "fastify";
 let buildServer: typeof import("../server").buildServer;
 import { createClient } from "redis";
 import { ledgerKey } from "../ledger.js";
+// import bcrypt from "bcrypt"; // Unused import
 
 vi.mock("redis", () => {
   class FakeRedis {
@@ -52,6 +61,15 @@ vi.mock("@prisma/client", () => {
     amountUsd: string;
     startDate?: Date;
     endDate?: Date;
+  }
+  interface ApiKey {
+    id: number;
+    keyHash: string;
+    keyPrefix: string;
+    tenantId: number;
+    isActive: boolean;
+    createdAt?: Date;
+    lastUsedAt?: Date;
   }
   interface ModelPricing {
     id: number;
@@ -128,7 +146,54 @@ vi.mock("@prisma/client", () => {
   class FakePrisma {
     tenant = new Collection<Tenant>();
     budget = new Collection<Budget>();
+    apiKey = new Collection<ApiKey>();
     modelPricing = new Collection<ModelPricing>();
+    auditLog = new Collection<{
+      id: number;
+      tenantId: number;
+      actor: string;
+      event: string;
+      details: string;
+    }>();
+    usageLedger = new Collection<{
+      id: number;
+      tenantId: number;
+      usd: string;
+      promptTokens: number;
+      completionTokens: number;
+      timestamp: Date;
+    }>();
+    tag = new Collection<{
+      id: number;
+      tenantId: number;
+      name: string;
+      description?: string;
+      parentId?: number;
+      path?: string;
+      level: number;
+      isActive: boolean;
+      color?: string;
+      metadata?: Record<string, unknown>;
+    }>();
+    tagBudget = new Collection<{
+      id: number;
+      tagId: number;
+      period: string;
+      amountUsd: string;
+      startDate?: Date;
+      endDate?: Date;
+      isActive: boolean;
+      weight: number;
+      alertThresholds?: Record<string, unknown>;
+      inheritanceMode: string;
+    }>();
+    requestTag = new Collection<{
+      id: number;
+      usageLedgerId: number;
+      tagId: number;
+      weight: number;
+      assignedBy: string;
+    }>();
 
     constructor() {
       // Pre-seed with gpt-4o-mini model for tests
@@ -211,11 +276,53 @@ afterAll(async () => {
   vi.unstubAllGlobals();
 });
 
+let testApiKey: string;
+let publicApiKey: string;
+
+beforeEach(async () => {
+  // Clear Redis data
+  const r = redis as unknown as { data: Record<string, string> };
+  r.data = {};
+
+  // Create public tenant and API key for public tenant tests
+  const publicTenant = await app.inject({
+    method: "POST",
+    url: "/admin/tenant",
+    headers: { "x-admin-key": "adminkey" },
+    payload: { name: "public" },
+  });
+
+  const publicApiKeyResponse = await app.inject({
+    method: "POST",
+    url: `/admin/tenant/${publicTenant.json().id}/apikeys`,
+    headers: { "x-admin-key": "adminkey" },
+    payload: {},
+  });
+  publicApiKey = publicApiKeyResponse.json().key;
+
+  // Create test tenant and API key for tenant-specific tests
+  const testTenant = await app.inject({
+    method: "POST",
+    url: "/admin/tenant",
+    headers: { "x-admin-key": "adminkey" },
+    payload: { name: "t1" },
+  });
+
+  const testApiKeyResponse = await app.inject({
+    method: "POST",
+    url: `/admin/tenant/${testTenant.json().id}/apikeys`,
+    headers: { "x-admin-key": "adminkey" },
+    payload: {},
+  });
+  testApiKey = testApiKeyResponse.json().key;
+});
+
 describe("budget enforcement", () => {
   it("allows under budget", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
+      headers: { "x-api-key": publicApiKey },
       payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
@@ -227,6 +334,7 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
+      headers: { "x-api-key": publicApiKey },
       payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(403);
@@ -248,22 +356,17 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
+      headers: { "x-api-key": publicApiKey },
       payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
   });
 
   it("falls back to db and caches on miss", async () => {
-    // create tenant and budget via admin API
+    // Set budget for test tenant via admin API
     await app.inject({
       method: "POST",
-      url: "/admin/tenant",
-      headers: { "x-admin-key": "adminkey" },
-      payload: { name: "t1" },
-    });
-    await app.inject({
-      method: "POST",
-      url: "/admin/tenant/1/budgets",
+      url: "/admin/tenant/2/budgets",
       headers: { "x-admin-key": "adminkey" },
       payload: { budgets: [{ period: "daily", amountUsd: 0.00003 }] },
     });
@@ -271,7 +374,7 @@ describe("budget enforcement", () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/responses",
-      headers: { "x-tenant-id": "t1" },
+      headers: { "x-api-key": testApiKey },
       payload: { model: "gpt-4o-mini", input: "hi", max_tokens: 1 },
     });
     expect(res.statusCode).toBe(200);
