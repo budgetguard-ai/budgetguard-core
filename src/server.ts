@@ -38,6 +38,51 @@ import {
   cleanupApiKeyCache,
   deactivateApiKeyInCache,
 } from "./auth-utils.js";
+import { checkTagBudgets, checkHierarchicalTagBudgets } from "./tag-budget.js";
+import { validateAndCacheTagSet, invalidateTagCache } from "./tag-cache.js";
+
+// TypeScript interfaces for type safety
+interface ValidatedTag {
+  id: number;
+  name: string;
+  weight: number;
+}
+
+interface TagWhereClause {
+  tenantId: number;
+  isActive?: boolean;
+  parentId?: number;
+}
+
+interface AuthContext {
+  keyAuth: { id: number; tenantId: number };
+  tenant: { id: number; name: string };
+}
+
+interface RequestWithTags extends FastifyRequest {
+  validatedTags?: ValidatedTag[];
+  authContext?: AuthContext;
+}
+
+interface TagUpdateData {
+  name?: string;
+  description?: string;
+  parentId?: number;
+  color?: string;
+  metadata?: Prisma.InputJsonValue;
+  isActive?: boolean;
+  path?: string;
+}
+
+interface TagBudgetUpdateData {
+  amountUsd?: string;
+  startDate?: Date;
+  endDate?: Date;
+  weight?: number;
+  alertThresholds?: Prisma.InputJsonValue;
+  inheritanceMode?: string;
+  isActive?: boolean;
+}
 
 dotenv.config();
 
@@ -50,6 +95,38 @@ const DEFAULT_BUDGET = Number(
 );
 
 const BUDGET_PERIODS = getBudgetPeriods();
+
+// Helper function to extract and validate tags from headers with Redis caching
+async function extractAndValidateTags(
+  headers: Record<string, string | string[] | undefined>,
+  tenantId: number,
+  prisma: PrismaClient,
+  redis?: ReturnType<typeof createClient>,
+): Promise<Array<{ id: number; name: string; weight: number }>> {
+  const validatedTags: Array<{ id: number; name: string; weight: number }> = [];
+  const budgetTagsHeaderRaw = headers["x-budget-tags"];
+
+  // Handle array headers by taking the first element, or convert to string
+  const budgetTagsHeader = Array.isArray(budgetTagsHeaderRaw)
+    ? budgetTagsHeaderRaw[0]
+    : budgetTagsHeaderRaw;
+
+  if (!budgetTagsHeader || typeof budgetTagsHeader !== "string") {
+    return validatedTags;
+  }
+
+  const tagNames = budgetTagsHeader
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  if (tagNames.length === 0) {
+    return validatedTags;
+  }
+
+  // Use cached validation for better performance
+  return await validateAndCacheTagSet(tagNames, tenantId, redis, prisma);
+}
 
 // Helper function to write budget cache for both recurring and custom budgets
 async function writeBudgetCache(
@@ -104,6 +181,9 @@ async function writeBudgetCache(
     );
   }
 }
+
+// Export for testing
+export { extractAndValidateTags };
 
 export async function buildServer() {
   const app = fastify({
@@ -533,7 +613,9 @@ export async function buildServer() {
       // ignore parse errors
     }
 
-    await redisClient.xAdd("bg_events", "*", {
+    // Get validated tags from request context
+    const validatedTags = (req as RequestWithTags).validatedTags || [];
+    const eventData: Record<string, string> = {
       ts: Date.now().toString(),
       tenant: (req.headers["x-tenant-id"] as string) || "public",
       route: req.routeOptions.url ?? req.url,
@@ -541,7 +623,20 @@ export async function buildServer() {
       usd: usd.toFixed(6),
       promptTok: promptTok.toString(),
       compTok: compTok.toString(),
-    });
+    };
+
+    // Add tag information if tags are present
+    if (validatedTags.length > 0) {
+      eventData.tags = JSON.stringify(
+        validatedTags.map((tag: ValidatedTag) => ({
+          id: tag.id,
+          name: tag.name,
+          weight: tag.weight,
+        })),
+      );
+    }
+
+    await redisClient.xAdd("bg_events", "*", eventData);
     const tenant = (req.headers["x-tenant-id"] as string) || "public";
     const prismaClient = await getPrisma();
     for (const period of BUDGET_PERIODS) {
@@ -795,6 +890,14 @@ export async function buildServer() {
             required: false,
             description: "Tenant API key",
           },
+          {
+            in: "header",
+            name: "X-Budget-Tags",
+            schema: { type: "string" },
+            required: false,
+            description:
+              "Comma-separated list of tags for budget allocation (e.g., 'engineering,production')",
+          },
         ],
         security: [{}, { ApiKeyAuth: [] }, { BearerAuth: [] }],
       },
@@ -802,37 +905,70 @@ export async function buildServer() {
     async (req, reply) => {
       const startDecision = process.hrtime.bigint();
       const prisma = await getPrisma();
-      let tenant = (req.headers["x-tenant-id"] as string) || "public";
+
+      // Extract API key from headers
       let supplied: string | undefined;
       const auth = req.headers.authorization as string | undefined;
       if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
       if (!supplied && req.headers["x-api-key"]) {
         supplied = req.headers["x-api-key"] as string;
       }
-      if (supplied) {
-        const keyAuth = await authenticateApiKey(supplied, prisma);
-        if (!keyAuth) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        const tenantRec = await prisma.tenant.findUnique({
-          where: { id: keyAuth.tenantId },
+
+      // Require authentication for all AI proxy requests
+      if (!supplied) {
+        return reply.code(401).send({
+          error:
+            "Authentication required. Provide API key via Authorization header or X-API-Key header",
         });
-        if (!tenantRec) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        tenant = tenantRec.name;
-        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
-        await prisma.auditLog
-          .create({
-            data: {
-              tenantId: keyAuth.tenantId,
-              actor: `apiKey:${keyAuth.id}`,
-              event: "api_key_used",
-              details: req.routeOptions.url ?? req.url,
-            },
-          })
-          .catch(() => {});
       }
+
+      // Authenticate and get tenant context
+      const keyAuth = await authenticateApiKey(supplied, prisma);
+      if (!keyAuth) {
+        return reply.code(401).send({ error: "Invalid API key" });
+      }
+
+      const tenantRec = await prisma.tenant.findUnique({
+        where: { id: keyAuth.tenantId },
+      });
+      if (!tenantRec) {
+        return reply.code(401).send({ error: "Tenant not found" });
+      }
+
+      const tenant = tenantRec.name;
+      const tenantId = tenantRec.id;
+      (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
+
+      // Audit log
+      await prisma.auditLog
+        .create({
+          data: {
+            tenantId: keyAuth.tenantId,
+            actor: `apiKey:${keyAuth.id}`,
+            event: "api_key_used",
+            details: req.routeOptions.url ?? req.url,
+          },
+        })
+        .catch(() => {});
+      // Extract and validate tags from X-Budget-Tags header
+      let validatedTags: Array<{ id: number; name: string; weight: number }> =
+        [];
+      try {
+        validatedTags = await extractAndValidateTags(
+          req.headers,
+          tenantId,
+          prisma,
+          redisClient,
+        );
+        // Store tags in request context for later use in onSend hook
+        (req as RequestWithTags).validatedTags = validatedTags;
+      } catch (error) {
+        return reply.code(400).send({
+          error:
+            error instanceof Error ? error.message : "Tag validation failed",
+        });
+      }
+
       // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
       const { budgets } = await readBudgetsOptimized(
         tenant,
@@ -872,6 +1008,81 @@ export async function buildServer() {
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+
+      // Check tag budgets if tags are present
+      if (validatedTags.length > 0) {
+        try {
+          const tagBudgetChecks = await checkTagBudgets({
+            validatedTags,
+            tenant,
+            tenantId: tenantId,
+            prisma,
+            redis: redisClient,
+            ledgerKey,
+          });
+
+          // Check for any exceeded tag budgets
+          const exceededTagBudgets = tagBudgetChecks.filter(
+            (check) => check.exceeded,
+          );
+          if (exceededTagBudgets.length > 0) {
+            const decisionMs =
+              Number(process.hrtime.bigint() - startDecision) / 1e6;
+            app.log.warn({
+              exceededTagBudgets: exceededTagBudgets.map((check) => ({
+                tagName: check.tagName,
+                period: check.period,
+                usage: check.usage,
+                budget: check.amount,
+              })),
+              decisionMs,
+            });
+            return reply.code(402).send({
+              error: `Tag budget exceeded: ${exceededTagBudgets
+                .map((check) => check.tagName)
+                .join(", ")}`,
+            });
+          }
+
+          // Also check hierarchical budgets
+          const hierarchicalChecks = await checkHierarchicalTagBudgets({
+            validatedTags,
+            tenant,
+            tenantId: tenantId,
+            prisma,
+            redis: redisClient,
+            ledgerKey,
+          });
+
+          const exceededHierarchicalBudgets = hierarchicalChecks.filter(
+            (check) => check.exceeded,
+          );
+          if (exceededHierarchicalBudgets.length > 0) {
+            const decisionMs =
+              Number(process.hrtime.bigint() - startDecision) / 1e6;
+            app.log.warn({
+              exceededHierarchicalBudgets: exceededHierarchicalBudgets.map(
+                (check) => ({
+                  tagName: check.tagName,
+                  period: check.period,
+                  usage: check.usage,
+                  budget: check.amount,
+                }),
+              ),
+              decisionMs,
+            });
+            return reply.code(402).send({
+              error: `Parent tag budget exceeded: ${exceededHierarchicalBudgets
+                .map((check) => check.tagName)
+                .join(", ")}`,
+            });
+          }
+        } catch (error) {
+          console.error("Error checking tag budgets:", error);
+          // Continue with request if tag budget check fails (fail open)
+        }
+      }
+
       const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
       app.log.info({ decisionMs }, "allow request");
 
@@ -956,6 +1167,14 @@ export async function buildServer() {
             required: false,
             description: "Tenant API key",
           },
+          {
+            in: "header",
+            name: "X-Budget-Tags",
+            schema: { type: "string" },
+            required: false,
+            description:
+              "Comma-separated list of tags for budget allocation (e.g., 'engineering,production')",
+          },
         ],
         security: [{}, { ApiKeyAuth: [] }],
       },
@@ -963,35 +1182,70 @@ export async function buildServer() {
     async (req, reply) => {
       const startDecision = process.hrtime.bigint();
       const prisma = await getPrisma();
-      let tenant = (req.headers["x-tenant-id"] as string) || "public";
+
+      // Extract API key from headers
       let supplied: string | undefined;
-      if (req.headers["x-api-key"]) {
+      const auth = req.headers.authorization as string | undefined;
+      if (auth && auth.startsWith("Bearer ")) supplied = auth.slice(7);
+      if (!supplied && req.headers["x-api-key"]) {
         supplied = req.headers["x-api-key"] as string;
       }
-      if (supplied) {
-        const keyAuth = await authenticateApiKey(supplied, prisma);
-        if (!keyAuth) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        const tenantRec = await prisma.tenant.findUnique({
-          where: { id: keyAuth.tenantId },
+
+      // Require authentication for all AI proxy requests
+      if (!supplied) {
+        return reply.code(401).send({
+          error:
+            "Authentication required. Provide API key via Authorization header or X-API-Key header",
         });
-        if (!tenantRec) {
-          return reply.code(401).send({ error: "Unauthorized" });
-        }
-        tenant = tenantRec.name;
-        (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
-        await prisma.auditLog
-          .create({
-            data: {
-              tenantId: keyAuth.tenantId,
-              actor: `apiKey:${keyAuth.id}`,
-              event: "api_key_used",
-              details: req.routeOptions.url ?? req.url,
-            },
-          })
-          .catch(() => {});
       }
+
+      // Authenticate and get tenant context
+      const keyAuth = await authenticateApiKey(supplied, prisma);
+      if (!keyAuth) {
+        return reply.code(401).send({ error: "Invalid API key" });
+      }
+
+      const tenantRec = await prisma.tenant.findUnique({
+        where: { id: keyAuth.tenantId },
+      });
+      if (!tenantRec) {
+        return reply.code(401).send({ error: "Tenant not found" });
+      }
+
+      const tenant = tenantRec.name;
+      const tenantId = tenantRec.id;
+      (req.headers as Record<string, string>)["x-tenant-id"] = tenant;
+
+      // Audit log
+      await prisma.auditLog
+        .create({
+          data: {
+            tenantId: keyAuth.tenantId,
+            actor: `apiKey:${keyAuth.id}`,
+            event: "api_key_used",
+            details: req.routeOptions.url ?? req.url,
+          },
+        })
+        .catch(() => {});
+      // Extract and validate tags from X-Budget-Tags header
+      let validatedTags: Array<{ id: number; name: string; weight: number }> =
+        [];
+      try {
+        validatedTags = await extractAndValidateTags(
+          req.headers,
+          tenantId,
+          prisma,
+          redisClient,
+        );
+        // Store tags in request context for later use in onSend hook
+        (req as RequestWithTags).validatedTags = validatedTags;
+      } catch (error) {
+        return reply.code(400).send({
+          error:
+            error instanceof Error ? error.message : "Tag validation failed",
+        });
+      }
+
       // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
       const { budgets } = await readBudgetsOptimized(
         tenant,
@@ -1031,6 +1285,81 @@ export async function buildServer() {
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
+
+      // Check tag budgets if tags are present
+      if (validatedTags.length > 0) {
+        try {
+          const tagBudgetChecks = await checkTagBudgets({
+            validatedTags,
+            tenant,
+            tenantId: tenantId,
+            prisma,
+            redis: redisClient,
+            ledgerKey,
+          });
+
+          // Check for any exceeded tag budgets
+          const exceededTagBudgets = tagBudgetChecks.filter(
+            (check) => check.exceeded,
+          );
+          if (exceededTagBudgets.length > 0) {
+            const decisionMs =
+              Number(process.hrtime.bigint() - startDecision) / 1e6;
+            app.log.warn({
+              exceededTagBudgets: exceededTagBudgets.map((check) => ({
+                tagName: check.tagName,
+                period: check.period,
+                usage: check.usage,
+                budget: check.amount,
+              })),
+              decisionMs,
+            });
+            return reply.code(402).send({
+              error: `Tag budget exceeded: ${exceededTagBudgets
+                .map((check) => check.tagName)
+                .join(", ")}`,
+            });
+          }
+
+          // Also check hierarchical budgets
+          const hierarchicalChecks = await checkHierarchicalTagBudgets({
+            validatedTags,
+            tenant,
+            tenantId: tenantId,
+            prisma,
+            redis: redisClient,
+            ledgerKey,
+          });
+
+          const exceededHierarchicalBudgets = hierarchicalChecks.filter(
+            (check) => check.exceeded,
+          );
+          if (exceededHierarchicalBudgets.length > 0) {
+            const decisionMs =
+              Number(process.hrtime.bigint() - startDecision) / 1e6;
+            app.log.warn({
+              exceededHierarchicalBudgets: exceededHierarchicalBudgets.map(
+                (check) => ({
+                  tagName: check.tagName,
+                  period: check.period,
+                  usage: check.usage,
+                  budget: check.amount,
+                }),
+              ),
+              decisionMs,
+            });
+            return reply.code(402).send({
+              error: `Parent tag budget exceeded: ${exceededHierarchicalBudgets
+                .map((check) => check.tagName)
+                .join(", ")}`,
+            });
+          }
+        } catch (error) {
+          console.error("Error checking tag budgets:", error);
+          // Continue with request if tag budget check fails (fail open)
+        }
+      }
+
       const decisionMs = Number(process.hrtime.bigint() - startDecision) / 1e6;
       app.log.info({ decisionMs }, "allow request");
 
@@ -1065,6 +1394,10 @@ export async function buildServer() {
       return reply.code(401).send({ error: "Unauthorized" });
     }
   };
+
+  // TODO: Shared authentication middleware for AI proxy endpoints
+  // Currently unused - would require refactoring existing endpoints to use it
+  // const aiProxyAuth = async (req: FastifyRequest, reply: FastifyReply) => { ... }
 
   app.post(
     "/admin/tenant",
@@ -3180,6 +3513,791 @@ export async function buildServer() {
           error:
             error instanceof Error ? error.message : "Failed to test provider",
         });
+      }
+    },
+  );
+
+  // Tag Management APIs
+  app.post(
+    "/admin/tenant/:tenantId/tags",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Create tag",
+        description: "Create a new tag for a tenant",
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            description: { type: "string" },
+            parentId: { type: "number" },
+            color: { type: "string" },
+            metadata: { type: "object" },
+          },
+          required: ["name"],
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const id = Number(tenantId);
+      const { name, description, parentId, color, metadata } = req.body as {
+        name: string;
+        description?: string;
+        parentId?: number;
+        color?: string;
+        metadata?: Record<string, unknown>;
+      };
+
+      try {
+        // Check if tenant exists
+        const tenant = await prisma.tenant.findUnique({ where: { id } });
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        // Check for duplicate tag name within tenant
+        const existing = await prisma.tag.findFirst({
+          where: { tenantId: id, name, isActive: true },
+        });
+        if (existing) {
+          return reply.code(400).send({ error: "Tag name already exists" });
+        }
+
+        // Calculate hierarchy details if parent is specified
+        let path = name;
+        let level = 0;
+
+        if (parentId) {
+          const parent = await prisma.tag.findFirst({
+            where: { id: parentId, tenantId: id, isActive: true },
+          });
+          if (!parent) {
+            return reply.code(400).send({ error: "Parent tag not found" });
+          }
+          path = parent.path
+            ? `${parent.path}/${name}`
+            : `${parent.name}/${name}`;
+          level = parent.level + 1;
+        }
+
+        const tag = await prisma.tag.create({
+          data: {
+            tenantId: id,
+            name,
+            description,
+            parentId,
+            path,
+            level,
+            color,
+            metadata: metadata as Prisma.InputJsonValue,
+          },
+          include: {
+            parent: true,
+            children: true,
+            budgets: true,
+          },
+        });
+
+        // Invalidate tag cache for this tenant
+        await invalidateTagCache(id, redisClient);
+
+        return reply.send(tag);
+      } catch (error) {
+        console.error("Error creating tag:", error);
+        return reply.code(500).send({ error: "Failed to create tag" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/tags",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "List tags",
+        description: "Get all tags for a tenant",
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            includeInactive: { type: "boolean" },
+            parentId: { type: "number" },
+          },
+        },
+        response: {
+          200: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { includeInactive, parentId } = req.query as {
+        includeInactive?: boolean;
+        parentId?: number;
+      };
+      const id = Number(tenantId);
+
+      try {
+        const whereClause: TagWhereClause = { tenantId: id };
+
+        if (!includeInactive) {
+          whereClause.isActive = true;
+        }
+
+        if (parentId !== undefined) {
+          whereClause.parentId = parentId;
+        }
+
+        const tags = await prisma.tag.findMany({
+          where: whereClause,
+          include: {
+            parent: true,
+            children: { where: { isActive: true } },
+            budgets: true,
+            _count: {
+              select: {
+                usage: true,
+              },
+            },
+          },
+          orderBy: [{ level: "asc" }, { name: "asc" }],
+        });
+
+        return reply.send(tags);
+      } catch (error) {
+        console.error("Error fetching tags:", error);
+        return reply.code(500).send({ error: "Failed to fetch tags" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/tags/:tagId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Get tag",
+        description: "Get a specific tag by ID",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        const tag = await prisma.tag.findFirst({
+          where: {
+            id: tagIdNum,
+            tenantId: tenantIdNum,
+            isActive: true,
+          },
+          include: {
+            parent: true,
+            children: { where: { isActive: true } },
+            budgets: true,
+            _count: {
+              select: {
+                usage: true,
+              },
+            },
+          },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        return reply.send(tag);
+      } catch (error) {
+        console.error("Error fetching tag:", error);
+        return reply.code(500).send({ error: "Failed to fetch tag" });
+      }
+    },
+  );
+
+  app.put(
+    "/admin/tenant/:tenantId/tags/:tagId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Update tag",
+        description: "Update a tag's properties",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            description: { type: "string" },
+            color: { type: "string" },
+            metadata: { type: "object" },
+            isActive: { type: "boolean" },
+          },
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const { name, description, color, metadata, isActive } = req.body as {
+        name?: string;
+        description?: string;
+        color?: string;
+        metadata?: Record<string, unknown>;
+        isActive?: boolean;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Check if tag exists
+        const existingTag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum },
+        });
+
+        if (!existingTag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        // Check for name conflicts if updating name
+        if (name && name !== existingTag.name) {
+          const duplicate = await prisma.tag.findFirst({
+            where: {
+              tenantId: tenantIdNum,
+              name,
+              isActive: true,
+              id: { not: tagIdNum },
+            },
+          });
+          if (duplicate) {
+            return reply.code(400).send({ error: "Tag name already exists" });
+          }
+        }
+
+        // Update the tag
+        const updateData: TagUpdateData = {};
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (color !== undefined) updateData.color = color;
+        if (metadata !== undefined)
+          updateData.metadata = metadata as Prisma.InputJsonValue;
+        if (isActive !== undefined) updateData.isActive = isActive;
+
+        // Update path if name changed
+        if (name && name !== existingTag.name) {
+          if (existingTag.parentId) {
+            const parent = await prisma.tag.findUnique({
+              where: { id: existingTag.parentId },
+            });
+            updateData.path = parent?.path
+              ? `${parent.path}/${name}`
+              : `${parent?.name}/${name}`;
+          } else {
+            updateData.path = name;
+          }
+        }
+
+        const updatedTag = await prisma.tag.update({
+          where: { id: tagIdNum },
+          data: updateData,
+          include: {
+            parent: true,
+            children: { where: { isActive: true } },
+            budgets: true,
+            _count: {
+              select: {
+                usage: true,
+              },
+            },
+          },
+        });
+
+        // Invalidate tag cache for this tenant
+        await invalidateTagCache(tenantIdNum, redisClient);
+
+        return reply.send(updatedTag);
+      } catch (error) {
+        console.error("Error updating tag:", error);
+        return reply.code(500).send({ error: "Failed to update tag" });
+      }
+    },
+  );
+
+  app.delete(
+    "/admin/tenant/:tenantId/tags/:tagId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Delete tag",
+        description: "Soft delete a tag (sets isActive to false)",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        response: {
+          200: { type: "object", properties: { success: { type: "boolean" } } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Check if tag exists
+        const tag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum },
+          include: { children: { where: { isActive: true } } },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        // Check if tag has active children
+        if (tag.children.length > 0) {
+          return reply.code(400).send({
+            error:
+              "Cannot delete tag with active children. Deactivate children first.",
+          });
+        }
+
+        // Soft delete the tag
+        await prisma.tag.update({
+          where: { id: tagIdNum },
+          data: { isActive: false },
+        });
+
+        // Invalidate tag cache for this tenant
+        await invalidateTagCache(tenantIdNum, redisClient);
+
+        return reply.send({ success: true });
+      } catch (error) {
+        console.error("Error deleting tag:", error);
+        return reply.code(500).send({ error: "Failed to delete tag" });
+      }
+    },
+  );
+
+  // Tag Budget Management APIs
+  app.post(
+    "/admin/tenant/:tenantId/tags/:tagId/budgets",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Budget Management"],
+        summary: "Create tag budget",
+        description: "Create a budget for a specific tag",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            period: { type: "string" },
+            amountUsd: { type: "number" },
+            startDate: { type: "string" },
+            endDate: { type: "string" },
+            weight: { type: "number" },
+            alertThresholds: { type: "object" },
+            inheritanceMode: { type: "string" },
+          },
+          required: ["period", "amountUsd"],
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const {
+        period,
+        amountUsd,
+        startDate,
+        endDate,
+        weight = 1.0,
+        alertThresholds,
+        inheritanceMode = "LENIENT",
+      } = req.body as {
+        period: string;
+        amountUsd: number;
+        startDate?: string;
+        endDate?: string;
+        weight?: number;
+        alertThresholds?: Record<string, unknown>;
+        inheritanceMode?: string;
+      };
+
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Validate period
+        if (!isValidPeriod(period as Period)) {
+          return reply.code(400).send({
+            error: `Invalid period. Must be one of: ${ALLOWED_PERIODS.join(", ")}`,
+          });
+        }
+
+        // Check if tag exists and belongs to tenant
+        const tag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum, isActive: true },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        // Check for existing budget with same period
+        const existingBudget = await prisma.tagBudget.findFirst({
+          where: {
+            tagId: tagIdNum,
+            period,
+            isActive: true,
+          },
+        });
+
+        if (existingBudget) {
+          return reply.code(400).send({
+            error: "Budget already exists for this tag and period",
+          });
+        }
+
+        // Validate dates for custom period
+        let parsedStartDate: Date | undefined;
+        let parsedEndDate: Date | undefined;
+
+        if (period === "custom") {
+          if (!startDate || !endDate) {
+            return reply.code(400).send({
+              error: "startDate and endDate are required for custom periods",
+            });
+          }
+          parsedStartDate = new Date(startDate);
+          parsedEndDate = new Date(endDate);
+
+          if (parsedStartDate >= parsedEndDate) {
+            return reply.code(400).send({
+              error: "startDate must be before endDate",
+            });
+          }
+        }
+
+        // Create tag budget
+        const tagBudget = await prisma.tagBudget.create({
+          data: {
+            tagId: tagIdNum,
+            period,
+            amountUsd,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
+            weight,
+            alertThresholds: alertThresholds as Prisma.InputJsonValue,
+            inheritanceMode,
+          },
+          include: {
+            tag: true,
+          },
+        });
+
+        return reply.send(tagBudget);
+      } catch (error) {
+        console.error("Error creating tag budget:", error);
+        return reply.code(500).send({ error: "Failed to create tag budget" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/tenant/:tenantId/tags/:tagId/budgets",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Budget Management"],
+        summary: "Get tag budgets",
+        description: "Get all budgets for a specific tag",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        response: {
+          200: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Check if tag exists and belongs to tenant
+        const tag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum, isActive: true },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        const budgets = await prisma.tagBudget.findMany({
+          where: {
+            tagId: tagIdNum,
+            isActive: true,
+          },
+          include: {
+            tag: true,
+          },
+          orderBy: { createdAt: "desc" },
+        });
+
+        return reply.send(budgets);
+      } catch (error) {
+        console.error("Error fetching tag budgets:", error);
+        return reply.code(500).send({ error: "Failed to fetch tag budgets" });
+      }
+    },
+  );
+
+  app.put(
+    "/admin/budget/tag/:budgetId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Budget Management"],
+        summary: "Update tag budget",
+        description: "Update a tag budget",
+        params: {
+          type: "object",
+          properties: { budgetId: { type: "string" } },
+          required: ["budgetId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            amountUsd: { type: "number" },
+            startDate: { type: "string" },
+            endDate: { type: "string" },
+            weight: { type: "number" },
+            alertThresholds: { type: "object" },
+            inheritanceMode: { type: "string" },
+            isActive: { type: "boolean" },
+          },
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { budgetId } = req.params as { budgetId: string };
+      const {
+        amountUsd,
+        startDate,
+        endDate,
+        weight,
+        alertThresholds,
+        inheritanceMode,
+        isActive,
+      } = req.body as {
+        amountUsd?: number;
+        startDate?: string;
+        endDate?: string;
+        weight?: number;
+        alertThresholds?: Record<string, unknown>;
+        inheritanceMode?: string;
+        isActive?: boolean;
+      };
+
+      const budgetIdNum = Number(budgetId);
+
+      try {
+        // Check if budget exists
+        const existingBudget = await prisma.tagBudget.findUnique({
+          where: { id: budgetIdNum },
+          include: { tag: true },
+        });
+
+        if (!existingBudget) {
+          return reply.code(404).send({ error: "Tag budget not found" });
+        }
+
+        // Validate dates for custom period if updating dates
+        let parsedStartDate: Date | undefined;
+        let parsedEndDate: Date | undefined;
+
+        if (existingBudget.period === "custom" && (startDate || endDate)) {
+          parsedStartDate = startDate
+            ? new Date(startDate)
+            : existingBudget.startDate || undefined;
+          parsedEndDate = endDate
+            ? new Date(endDate)
+            : existingBudget.endDate || undefined;
+
+          if (
+            parsedStartDate &&
+            parsedEndDate &&
+            parsedStartDate >= parsedEndDate
+          ) {
+            return reply.code(400).send({
+              error: "startDate must be before endDate",
+            });
+          }
+        }
+
+        // Update budget
+        const updateData: TagBudgetUpdateData = {};
+        if (amountUsd !== undefined)
+          updateData.amountUsd = amountUsd.toString();
+        if (startDate !== undefined) updateData.startDate = parsedStartDate;
+        if (endDate !== undefined) updateData.endDate = parsedEndDate;
+        if (weight !== undefined) updateData.weight = weight;
+        if (alertThresholds !== undefined)
+          updateData.alertThresholds = alertThresholds as Prisma.InputJsonValue;
+        if (inheritanceMode !== undefined)
+          updateData.inheritanceMode = inheritanceMode;
+        if (isActive !== undefined) updateData.isActive = isActive;
+
+        const updatedBudget = await prisma.tagBudget.update({
+          where: { id: budgetIdNum },
+          data: updateData,
+          include: {
+            tag: true,
+          },
+        });
+
+        return reply.send(updatedBudget);
+      } catch (error) {
+        console.error("Error updating tag budget:", error);
+        return reply.code(500).send({ error: "Failed to update tag budget" });
+      }
+    },
+  );
+
+  app.delete(
+    "/admin/budget/tag/:budgetId",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Budget Management"],
+        summary: "Delete tag budget",
+        description: "Delete a tag budget",
+        params: {
+          type: "object",
+          properties: { budgetId: { type: "string" } },
+          required: ["budgetId"],
+        },
+        response: {
+          200: { type: "object", properties: { success: { type: "boolean" } } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { budgetId } = req.params as { budgetId: string };
+      const budgetIdNum = Number(budgetId);
+
+      try {
+        // Check if budget exists
+        const budget = await prisma.tagBudget.findUnique({
+          where: { id: budgetIdNum },
+        });
+
+        if (!budget) {
+          return reply.code(404).send({ error: "Tag budget not found" });
+        }
+
+        // Delete the budget (hard delete for now, could be soft delete)
+        await prisma.tagBudget.delete({
+          where: { id: budgetIdNum },
+        });
+
+        return reply.send({ success: true });
+      } catch (error) {
+        console.error("Error deleting tag budget:", error);
+        return reply.code(500).send({ error: "Failed to delete tag budget" });
       }
     },
   );

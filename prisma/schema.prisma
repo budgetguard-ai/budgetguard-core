@@ -18,7 +18,8 @@ model UsageLedger {
   promptTok Int
   compTok   Int
   tenantId  Int?
-  tenantRef Tenant?  @relation(fields: [tenantId], references: [id])
+  tenantRef Tenant?     @relation(fields: [tenantId], references: [id])
+  tags      RequestTag[]
 
   @@index([tenantId])
 }
@@ -35,6 +36,8 @@ model Tenant {
   budgets         Budget[]
   policies        PolicyBundle[]
   ledger          UsageLedger[]
+  tags            Tag[]
+  taggingRules    TaggingRule[]
 }
 
 model ApiKey {
@@ -110,4 +113,82 @@ model ModelPricing {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   provider         String   @default("openai")
+}
+
+model Tag {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  name        String
+  description String?
+  parentId    Int?
+  path        String?  // "engineering/frontend" - for faster hierarchical queries
+  level       Int      @default(0)  // hierarchy depth for query optimization
+  isActive    Boolean  @default(true)  // soft delete capability
+  color       String?  // UI display color
+  metadata    Json?    // extensible properties for future features
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  parent      Tag?        @relation("TagHierarchy", fields: [parentId], references: [id])  
+  children    Tag[]       @relation("TagHierarchy")
+  budgets     TagBudget[]
+  usage       RequestTag[]
+  
+  @@unique([tenantId, name])
+  @@unique([tenantId, path])  // Ensure unique paths within tenant
+  @@index([tenantId])
+  @@index([tenantId, path])   // Hierarchical query optimization
+  @@index([tenantId, isActive])  // Active tags filtering
+}
+
+model TagBudget {
+  id              Int      @id @default(autoincrement())
+  tagId           Int
+  period          String   // daily, monthly, custom
+  amountUsd       Decimal
+  startDate       DateTime?
+  endDate         DateTime?
+  isActive        Boolean  @default(true)  // enable/disable without deletion
+  weight          Float    @default(1.0)   // budget consumption multiplier
+  alertThresholds Json?    // {warning: 75, critical: 90}
+  inheritanceMode String   @default("LENIENT") // STRICT, LENIENT, BYPASS
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  tag             Tag      @relation(fields: [tagId], references: [id])
+  
+  @@index([tagId])
+  @@index([tagId, isActive])
+}
+
+model RequestTag {
+  id            BigInt      @id @default(autoincrement())
+  usageLedgerId BigInt
+  tagId         Int
+  weight        Float       @default(1.0)  // per-request weight override
+  assignedBy    String      @default("manual") // manual, auto_rule, header
+  
+  usage         UsageLedger @relation(fields: [usageLedgerId], references: [id])
+  tag           Tag         @relation(fields: [tagId], references: [id])
+  
+  @@unique([usageLedgerId, tagId])
+  @@index([tagId])
+  @@index([usageLedgerId])
+}
+
+model TaggingRule {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  name        String
+  conditions  Json     // {"route": "/v1/chat/completions", "model": "gpt-4"}
+  actions     Json     // {"tags": ["ai-chat", "premium-model"], "weight": 1.5}
+  priority    Int      @default(0)  // execution order
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
 }

@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
+import { incrementTagUsage } from "./tag-cache.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -35,7 +36,7 @@ async function main() {
         update: {},
         create: { name: data.tenant },
       });
-      await prisma.usageLedger.create({
+      const usageLedgerEntry = await prisma.usageLedger.create({
         data: {
           ts: new Date(Number(data.ts)),
           tenant: data.tenant,
@@ -47,6 +48,57 @@ async function main() {
           compTok: Number(data.compTok),
         },
       });
+
+      // Handle tag associations if present
+      if (data.tags) {
+        try {
+          const tags = JSON.parse(data.tags) as Array<{
+            id: number;
+            name: string;
+            weight: number;
+          }>;
+
+          // Create RequestTag entries for each tag and update usage cache
+          const usdValue = parseFloat(data.usd); // Parse once outside the loop
+          for (const tag of tags) {
+            await prisma.requestTag.create({
+              data: {
+                usageLedgerId: usageLedgerEntry.id,
+                tagId: tag.id,
+                weight: tag.weight,
+                assignedBy: "header",
+              },
+            });
+
+            // Increment tag usage cache for both daily and monthly periods
+            const weightedUsage = usdValue * tag.weight;
+            const tenantName = data.tenant;
+
+            // Increment daily usage (shorter TTL for more frequent updates)
+            await incrementTagUsage(
+              tenantName,
+              tag.id,
+              "daily",
+              weightedUsage,
+              redis,
+              15 * 60,
+            ); // 15 min TTL
+
+            // Increment monthly usage (longer TTL)
+            await incrementTagUsage(
+              tenantName,
+              tag.id,
+              "monthly",
+              weightedUsage,
+              redis,
+              30 * 60,
+            ); // 30 min TTL
+          }
+        } catch (error) {
+          console.error("Error processing tags for usage entry:", error);
+          // Continue processing even if tag association fails
+        }
+      }
     }
   }
 }
