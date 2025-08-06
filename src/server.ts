@@ -51,6 +51,7 @@ interface ValidatedTag {
 interface TagWhereClause {
   tenantId: number;
   isActive?: boolean;
+  parentId?: number;
 }
 
 interface RequestWithTags extends FastifyRequest {
@@ -62,7 +63,9 @@ interface TagUpdateData {
   description?: string;
   parentId?: number;
   color?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonValue;
+  isActive?: boolean;
+  path?: string;
 }
 
 interface TagBudgetUpdateData {
@@ -70,7 +73,7 @@ interface TagBudgetUpdateData {
   startDate?: Date;
   endDate?: Date;
   weight?: number;
-  alertThresholds?: Record<string, unknown>;
+  alertThresholds?: Prisma.InputJsonValue;
   inheritanceMode?: string;
   isActive?: boolean;
 }
@@ -3587,7 +3590,7 @@ export async function buildServer() {
             path,
             level,
             color,
-            metadata,
+            metadata: metadata as Prisma.InputJsonValue,
           },
           include: {
             parent: true,
@@ -3816,7 +3819,8 @@ export async function buildServer() {
         if (name !== undefined) updateData.name = name;
         if (description !== undefined) updateData.description = description;
         if (color !== undefined) updateData.color = color;
-        if (metadata !== undefined) updateData.metadata = metadata;
+        if (metadata !== undefined)
+          updateData.metadata = metadata as Prisma.InputJsonValue;
         if (isActive !== undefined) updateData.isActive = isActive;
 
         // Update path if name changed
@@ -4048,7 +4052,7 @@ export async function buildServer() {
             startDate: parsedStartDate,
             endDate: parsedEndDate,
             weight,
-            alertThresholds,
+            alertThresholds: alertThresholds as Prisma.InputJsonValue,
             inheritanceMode,
           },
           include: {
@@ -4215,12 +4219,13 @@ export async function buildServer() {
 
         // Update budget
         const updateData: TagBudgetUpdateData = {};
-        if (amountUsd !== undefined) updateData.amountUsd = amountUsd;
+        if (amountUsd !== undefined)
+          updateData.amountUsd = amountUsd.toString();
         if (startDate !== undefined) updateData.startDate = parsedStartDate;
         if (endDate !== undefined) updateData.endDate = parsedEndDate;
         if (weight !== undefined) updateData.weight = weight;
         if (alertThresholds !== undefined)
-          updateData.alertThresholds = alertThresholds;
+          updateData.alertThresholds = alertThresholds as Prisma.InputJsonValue;
         if (inheritanceMode !== undefined)
           updateData.inheritanceMode = inheritanceMode;
         if (isActive !== undefined) updateData.isActive = isActive;
