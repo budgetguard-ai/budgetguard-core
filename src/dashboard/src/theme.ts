@@ -112,44 +112,66 @@ export const lightTheme = createTheme({
       "sans-serif",
     ].join(","),
     h1: {
-      fontSize: "3.5rem",
+      fontSize: "3rem",
       fontWeight: 400,
       lineHeight: 1.167,
     },
     h2: {
-      fontSize: "2.25rem",
+      fontSize: "2rem",
       fontWeight: 400,
       lineHeight: 1.2,
     },
     h3: {
-      fontSize: "1.75rem",
+      fontSize: "1.5rem",
       fontWeight: 400,
       lineHeight: 1.167,
     },
     h4: {
-      fontSize: "1.5rem",
+      fontSize: "1.25rem",
       fontWeight: 400,
       lineHeight: 1.235,
     },
     h5: {
-      fontSize: "1.25rem",
+      fontSize: "1.125rem",
       fontWeight: 400,
       lineHeight: 1.334,
     },
     h6: {
-      fontSize: "1.125rem",
+      fontSize: "1rem",
       fontWeight: 500,
       lineHeight: 1.6,
     },
+    subtitle1: {
+      fontSize: "0.9375rem",
+      fontWeight: 500,
+      lineHeight: 1.5,
+    },
+    subtitle2: {
+      fontSize: "0.8125rem",
+      fontWeight: 500,
+      lineHeight: 1.57,
+    },
     body1: {
-      fontSize: "1rem",
+      fontSize: "0.875rem",
       fontWeight: 400,
       lineHeight: 1.5,
     },
     body2: {
-      fontSize: "0.875rem",
+      fontSize: "0.75rem",
       fontWeight: 400,
       lineHeight: 1.43,
+    },
+    caption: {
+      fontSize: "0.6875rem",
+      fontWeight: 400,
+      lineHeight: 1.66,
+    },
+    overline: {
+      fontSize: "0.625rem",
+      fontWeight: 400,
+      lineHeight: 2.66,
+      letterSpacing: "0.08333em",
+      textTransform: "uppercase",
     },
   },
   shape: {
@@ -205,6 +227,16 @@ export const lightTheme = createTheme({
             transform: "translateY(-2px)",
             boxShadow: "0 12px 40px rgba(31, 38, 135, 0.5)",
             background: "rgba(255, 255, 255, 0.35)",
+          },
+        },
+      },
+    },
+    MuiCardContent: {
+      styleOverrides: {
+        root: {
+          padding: "16px",
+          "&:last-child": {
+            paddingBottom: "16px",
           },
         },
       },
@@ -399,6 +431,16 @@ export const darkTheme = createTheme({
             transform: "translateY(-2px)",
             boxShadow: "0 12px 40px rgba(255, 255, 255, 0.15)",
             background: "rgba(255, 255, 255, 0.15)",
+          },
+        },
+      },
+    },
+    MuiCardContent: {
+      styleOverrides: {
+        root: {
+          padding: "16px",
+          "&:last-child": {
+            paddingBottom: "16px",
           },
         },
       },

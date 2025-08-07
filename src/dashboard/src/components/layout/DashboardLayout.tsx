@@ -77,14 +77,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             src={logoPng}
             alt="BudgetGuard Logo"
             style={{
-              width: 56,
-              height: 56,
+              width: 48,
+              height: 48,
               filter: appTheme === "dark" ? "invert(1)" : "none",
               transition: "filter 0.3s ease",
             }}
           />
           <Typography
-            variant="h4"
+            variant="h5"
             noWrap
             component="div"
             sx={{
@@ -106,7 +106,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
               sx={{
                 borderRadius: 2,
                 mx: 1,
-                my: 0.5,
+                my: 0.25,
                 "&.Mui-selected": {
                   backgroundColor: theme.palette.primary.main,
                   color: theme.palette.primary.contrastText,
@@ -133,6 +133,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                 primary={item.text}
                 primaryTypographyProps={{
                   fontWeight: location.pathname === item.path ? 600 : 400,
+                  fontSize: "0.875rem",
                 }}
               />
             </ListItemButton>

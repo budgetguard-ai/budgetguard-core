@@ -75,7 +75,7 @@ const Tenants: React.FC = () => {
   // Skeleton loading component
   const TenantCardSkeleton = () => (
     <Card sx={{ width: "100%", boxSizing: "border-box" }}>
-      <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
         <Skeleton variant="text" width="60%" height={32} sx={{ mb: 2 }} />
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <Box
@@ -237,14 +237,14 @@ const Tenants: React.FC = () => {
     return (
       <Box sx={{ width: "100%", maxWidth: "100%", overflow: "hidden" }}>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
-          sx={{ fontWeight: 600, mb: 4 }}
+          sx={{ fontWeight: 600, mb: 3 }}
         >
           Tenant Management
         </Typography>
-        <Grid container spacing={3} sx={{ width: "100%", margin: 0 }}>
+        <Grid container spacing={2} sx={{ width: "100%", margin: 0 }}>
           {Array.from({ length: 6 }).map((_, index) => (
             <Grid item xs={12} sm={6} md={4} xl={3} key={index}>
               <TenantCardSkeleton />
@@ -263,11 +263,11 @@ const Tenants: React.FC = () => {
 
   return (
     <Box sx={{ width: "100%", maxWidth: "100%", position: "relative" }}>
-      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
+      <Typography variant="h5" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
         Tenant Management
       </Typography>
 
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ mb: 3 }}>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -278,7 +278,7 @@ const Tenants: React.FC = () => {
         </Button>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={2}>
         {tenants?.map((tenant) => (
           <Grid
             item
@@ -298,8 +298,8 @@ const Tenants: React.FC = () => {
                 boxSizing: "border-box",
               }}
             >
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+              <CardContent sx={{ flexGrow: 1, p: 2 }}>
+                <Typography variant="subtitle1" gutterBottom sx={{ mb: 2 }}>
                   {tenant.name}
                 </Typography>
                 <Box display="flex" alignItems="center" mb={1}>
@@ -390,7 +390,7 @@ const Tenants: React.FC = () => {
                 <TenantBudgetInfo tenant={tenant} />
               </CardContent>
               <CardActions
-                sx={{ justifyContent: "space-between", p: 2, pt: 0 }}
+                sx={{ justifyContent: "space-between", p: 1.5, pt: 0 }}
               >
                 <Box>
                   <Tooltip title="View Details">
@@ -445,7 +445,7 @@ const Tenants: React.FC = () => {
 
       {tenants?.length === 0 && (
         <Box textAlign="center" py={8}>
-          <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
             No tenants found
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>

@@ -26,16 +26,16 @@ const Settings: React.FC = () => {
   return (
     <Box>
       <Typography
-        variant="h4"
+        variant="h5"
         component="h1"
         gutterBottom
-        sx={{ fontWeight: 600, mb: 4 }}
+        sx={{ fontWeight: 600, mb: 3 }}
       >
         Settings
       </Typography>
 
       {/* System Health Section */}
-      <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 3 }}>
+      <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
         System Health
       </Typography>
 
@@ -53,14 +53,14 @@ const Settings: React.FC = () => {
           Failed to load system health: {healthError.message}
         </Alert>
       ) : (
-        <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid container spacing={2} sx={{ mb: 3 }}>
           {/* System Health Card */}
           <Grid item xs={12} md={6} lg={4}>
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
                   <DatabaseIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">System Status</Typography>
+                  <Typography variant="subtitle1">System Status</Typography>
                 </Box>
                 <Box display="flex" alignItems="center" mb={1}>
                   <Typography
@@ -120,7 +120,7 @@ const Settings: React.FC = () => {
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
                   <ProvidersIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">AI Providers</Typography>
+                  <Typography variant="subtitle1">AI Providers</Typography>
                 </Box>
                 <Box display="flex" alignItems="center" mb={2}>
                   <Typography
@@ -159,7 +159,7 @@ const Settings: React.FC = () => {
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
                   <SettingsIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">Configuration</Typography>
+                  <Typography variant="subtitle1">Configuration</Typography>
                 </Box>
                 <Typography variant="body2" color="text.secondary" paragraph>
                   Supported AI providers: OpenAI, Anthropic Claude, and Google
@@ -176,13 +176,13 @@ const Settings: React.FC = () => {
       )}
 
       {/* Application Settings Section */}
-      <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 3 }}>
+      <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
         Application Settings
       </Typography>
 
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="subtitle1" gutterBottom>
             Coming Soon
           </Typography>
           <Typography variant="body2" color="text.secondary">

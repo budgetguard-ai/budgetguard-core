@@ -104,8 +104,8 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
 
   return (
     <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
+      <CardContent sx={{ p: 2 }}>
+        <Typography variant="subtitle1" gutterBottom>
           {title}
         </Typography>
         <Box sx={{ height: height }}>
