@@ -10,6 +10,14 @@ import type {
   CreateBudgetRequest,
   CreateModelPricingRequest,
   UpdateModelPricingRequest,
+  Tag,
+  TagBudget,
+  CreateTagRequest,
+  UpdateTagRequest,
+  CreateTagBudgetRequest,
+  UpdateTagBudgetRequest,
+  TagAnalyticsParams,
+  TagAnalytics,
 } from "../types";
 
 class ApiClient {
@@ -299,6 +307,108 @@ class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  // Tag management endpoints
+  async getTenantTags(
+    tenantId: number,
+    includeInactive?: boolean,
+  ): Promise<Tag[]> {
+    const query = includeInactive ? "?includeInactive=true" : "";
+    return this.request<Tag[]>(`/admin/tenant/${tenantId}/tags${query}`);
+  }
+
+  async createTag(tenantId: number, data: CreateTagRequest): Promise<Tag> {
+    return this.request<Tag>(`/admin/tenant/${tenantId}/tags`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTag(tenantId: number, tagId: number): Promise<Tag> {
+    return this.request<Tag>(`/admin/tenant/${tenantId}/tags/${tagId}`);
+  }
+
+  async updateTag(
+    tenantId: number,
+    tagId: number,
+    data: UpdateTagRequest,
+  ): Promise<Tag> {
+    return this.request<Tag>(`/admin/tenant/${tenantId}/tags/${tagId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTag(tenantId: number, tagId: number): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(
+      `/admin/tenant/${tenantId}/tags/${tagId}`,
+      {
+        method: "DELETE",
+      },
+    );
+  }
+
+  // Tag budget management endpoints
+  async getTagBudgets(tenantId: number): Promise<TagBudget[]> {
+    return this.request<TagBudget[]>(`/admin/tenant/${tenantId}/tag-budgets`);
+  }
+
+  async createTagBudget(
+    tenantId: number,
+    data: CreateTagBudgetRequest,
+  ): Promise<TagBudget> {
+    return this.request<TagBudget>(`/admin/tenant/${tenantId}/tag-budgets`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTagBudget(
+    tenantId: number,
+    budgetId: number,
+    data: UpdateTagBudgetRequest,
+  ): Promise<TagBudget> {
+    return this.request<TagBudget>(
+      `/admin/tenant/${tenantId}/tag-budgets/${budgetId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteTagBudget(
+    tenantId: number,
+    budgetId: number,
+  ): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(
+      `/admin/tenant/${tenantId}/tag-budgets/${budgetId}`,
+      {
+        method: "DELETE",
+      },
+    );
+  }
+
+  // Tag analytics endpoints
+  async getTagUsageAnalytics(
+    tenantId: number,
+    params?: TagAnalyticsParams,
+  ): Promise<TagAnalytics> {
+    const queryParams = new URLSearchParams();
+    if (params?.days) queryParams.append("days", params.days.toString());
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.tagIds?.length) {
+      params.tagIds.forEach((id: number) =>
+        queryParams.append("tagId", id.toString()),
+      );
+    }
+
+    const queryString = queryParams.toString();
+    const url = `/admin/tenant/${tenantId}/tag-analytics${queryString ? `?${queryString}` : ""}`;
+
+    return this.request(url);
   }
 }
 
