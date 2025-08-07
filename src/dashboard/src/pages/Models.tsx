@@ -283,7 +283,7 @@ const Models: React.FC = () => {
     return (
       <Box>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
           sx={{ fontWeight: 600, mb: 4 }}
@@ -301,7 +301,7 @@ const Models: React.FC = () => {
     return (
       <Box>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
           sx={{ fontWeight: 600, mb: 4 }}
@@ -323,7 +323,7 @@ const Models: React.FC = () => {
           mb: 4,
         }}
       >
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
           Model Pricing
         </Typography>
         <Box sx={{ display: "flex", gap: 2 }}>
@@ -350,7 +350,7 @@ const Models: React.FC = () => {
         <CardContent>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
             <SearchIcon />
-            <Typography variant="h6">Filters</Typography>
+            <Typography variant="subtitle1">Filters</Typography>
             {activeFiltersCount > 0 && (
               <Chip
                 label={`${activeFiltersCount} active`}

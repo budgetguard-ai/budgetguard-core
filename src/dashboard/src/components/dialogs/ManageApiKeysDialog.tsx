@@ -128,7 +128,9 @@ const ManageApiKeysDialog: React.FC<ManageApiKeysDialogProps> = ({
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <Typography variant="h6">API Keys for {tenant.name}</Typography>
+          <Typography variant="subtitle1">
+            API Keys for {tenant.name}
+          </Typography>
           <Button
             variant="contained"
             size="small"

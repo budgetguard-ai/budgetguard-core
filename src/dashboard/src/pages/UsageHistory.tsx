@@ -243,7 +243,7 @@ const UsageHistory: React.FC = () => {
             mb: 4,
           }}
         >
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+          <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
             Usage History
           </Typography>
           <Box sx={{ display: "flex", gap: 2 }}>
@@ -263,7 +263,7 @@ const UsageHistory: React.FC = () => {
           <CardContent>
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
               <FilterIcon />
-              <Typography variant="h6">Filters</Typography>
+              <Typography variant="subtitle1">Filters</Typography>
               {activeFiltersCount > 0 && (
                 <Chip
                   label={`${activeFiltersCount} active`}

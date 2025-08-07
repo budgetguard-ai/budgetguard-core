@@ -67,8 +67,8 @@ const ModelBreakdownChart: React.FC<ModelBreakdownChartProps> = ({
 
   return (
     <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
+      <CardContent sx={{ p: 2 }}>
+        <Typography variant="subtitle1" gutterBottom>
           {title}
         </Typography>
         <Grid container spacing={2}>

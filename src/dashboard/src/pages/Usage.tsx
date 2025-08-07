@@ -46,10 +46,10 @@ const Usage: React.FC = () => {
     return (
       <Box>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
-          sx={{ fontWeight: 600, mb: 4 }}
+          sx={{ fontWeight: 600, mb: 3 }}
         >
           Usage Analytics
         </Typography>
@@ -64,10 +64,10 @@ const Usage: React.FC = () => {
     return (
       <Box>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
-          sx={{ fontWeight: 600, mb: 4 }}
+          sx={{ fontWeight: 600, mb: 3 }}
         >
           Usage Analytics
         </Typography>
@@ -83,10 +83,10 @@ const Usage: React.FC = () => {
     return (
       <Box>
         <Typography
-          variant="h4"
+          variant="h5"
           component="h1"
           gutterBottom
-          sx={{ fontWeight: 600, mb: 4 }}
+          sx={{ fontWeight: 600, mb: 3 }}
         >
           Usage Analytics
         </Typography>
@@ -112,10 +112,10 @@ const Usage: React.FC = () => {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          mb: 4,
+          mb: 3,
         }}
       >
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
           Usage Analytics
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -166,14 +166,14 @@ const Usage: React.FC = () => {
       {!isLoading && (
         <>
           {/* Summary Cards */}
-          <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid item xs={12} sm={6} md={3}>
               <Card>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <TrendingUpIcon color="primary" sx={{ fontSize: 40 }} />
+                    <TrendingUpIcon color="primary" sx={{ fontSize: 32 }} />
                     <Box>
-                      <Typography variant="h4" color="primary">
+                      <Typography variant="h5" color="primary">
                         ${totalUsage.toFixed(2)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -188,9 +188,9 @@ const Usage: React.FC = () => {
               <Card>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <AssessmentIcon color="success" sx={{ fontSize: 40 }} />
+                    <AssessmentIcon color="success" sx={{ fontSize: 32 }} />
                     <Box>
-                      <Typography variant="h4" color="success.main">
+                      <Typography variant="h5" color="success.main">
                         {activeBudgets}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -205,9 +205,9 @@ const Usage: React.FC = () => {
               <Card>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <TimelineIcon color="warning" sx={{ fontSize: 40 }} />
+                    <TimelineIcon color="warning" sx={{ fontSize: 32 }} />
                     <Box>
-                      <Typography variant="h4" color="warning.main">
+                      <Typography variant="h5" color="warning.main">
                         {data.modelBreakdown.length}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -224,11 +224,11 @@ const Usage: React.FC = () => {
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                     <WalletIcon
                       color={criticalBudgets > 0 ? "error" : "success"}
-                      sx={{ fontSize: 40 }}
+                      sx={{ fontSize: 32 }}
                     />
                     <Box>
                       <Typography
-                        variant="h4"
+                        variant="h5"
                         color={
                           criticalBudgets > 0 ? "error.main" : "success.main"
                         }
@@ -246,14 +246,14 @@ const Usage: React.FC = () => {
           </Grid>
 
           {/* Budget Health Indicators */}
-          <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid item xs={12}>
               <BudgetHealthIndicator budgets={data.budgetHealth} />
             </Grid>
           </Grid>
 
           {/* Charts */}
-          <Grid container spacing={3}>
+          <Grid container spacing={2}>
             {/* Daily Budget Chart */}
             {data.separatedBudgets.daily.labels.length > 0 && (
               <Grid item xs={12} md={6}>

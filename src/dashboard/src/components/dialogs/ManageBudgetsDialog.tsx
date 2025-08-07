@@ -301,7 +301,7 @@ const ManageBudgetsDialog: React.FC<ManageBudgetsDialogProps> = ({
               onSubmit={handleSubmit}
               sx={{ display: "flex", flexDirection: "column", gap: 2 }}
             >
-              <Typography variant="h6">
+              <Typography variant="subtitle1">
                 {editingBudget ? "Edit Budget" : "Create New Budget"}
               </Typography>
 

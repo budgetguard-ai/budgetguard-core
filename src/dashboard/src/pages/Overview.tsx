@@ -46,22 +46,22 @@ const Overview: React.FC = () => {
   return (
     <Box>
       <Typography
-        variant="h4"
+        variant="h5"
         component="h1"
         gutterBottom
-        sx={{ fontWeight: 600, mb: 4 }}
+        sx={{ fontWeight: 600, mb: 3 }}
       >
         System Overview
       </Typography>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={2}>
         {/* System Health Card */}
         <Grid item xs={12} md={6} lg={4}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
                 <DatabaseIcon color="primary" sx={{ mr: 1 }} />
-                <Typography variant="h6">System Health</Typography>
+                <Typography variant="subtitle1">System Health</Typography>
               </Box>
               <Box display="flex" alignItems="center" mb={1}>
                 <Typography
@@ -119,7 +119,7 @@ const Overview: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
                 <ProvidersIcon color="primary" sx={{ mr: 1 }} />
-                <Typography variant="h6">AI Providers</Typography>
+                <Typography variant="subtitle1">AI Providers</Typography>
               </Box>
               <Box display="flex" alignItems="center" mb={2}>
                 <Typography
