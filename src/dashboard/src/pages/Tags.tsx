@@ -25,6 +25,7 @@ const Tags: React.FC = () => {
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
   const [isLoading, setIsLoading] = useState(false);
   const [analytics, setAnalytics] = useState<TagAnalytics | null>(null);
+  const [totalTenantUsage, setTotalTenantUsage] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [drilldownTag, setDrilldownTag] = useState<TagUsageData | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -69,12 +70,13 @@ const Tags: React.FC = () => {
       }
 
       try {
-        const analytics = await apiClient.getTagUsageAnalytics(
-          selectedTenant.id,
-          {
-            days: timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90,
-          },
-        );
+        const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
+
+        // Fetch both tag analytics and model breakdown to get complete usage data
+        const [analytics, modelBreakdown] = await Promise.all([
+          apiClient.getTagUsageAnalytics(selectedTenant.id, { days }),
+          apiClient.getTenantModelBreakdown(selectedTenant.id, days),
+        ]);
 
         // Validate and transform the analytics data
         if (!analytics || typeof analytics !== "object") {
@@ -93,7 +95,13 @@ const Tags: React.FC = () => {
           criticalBudgets: analytics.criticalBudgets || 0,
         };
 
+        // Calculate total tenant usage from model breakdown (includes untagged usage)
+        const totalUsage = Array.isArray(modelBreakdown)
+          ? modelBreakdown.reduce((sum, item) => sum + item.usage, 0)
+          : 0;
+
         setAnalytics(validatedAnalytics);
+        setTotalTenantUsage(totalUsage);
       } catch (err) {
         console.error("Failed to fetch tag analytics:", err);
         if (err instanceof Error) {
@@ -244,7 +252,7 @@ const Tags: React.FC = () => {
           <Box sx={{ mb: 3 }}>
             <TagMetricsCards
               analytics={analytics}
-              totalTenantUsage={analytics.totalUsage}
+              totalTenantUsage={totalTenantUsage}
             />
           </Box>
 
@@ -257,7 +265,7 @@ const Tags: React.FC = () => {
                 title="Tag Usage Analytics"
                 width={drilldownTag ? 600 : 800}
                 height={500}
-                totalBudgetUsage={analytics.totalUsage}
+                totalBudgetUsage={totalTenantUsage}
               />
             </Grid>
 

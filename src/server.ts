@@ -2402,7 +2402,7 @@ export async function buildServer() {
       // Convert to array format
       const result = Array.from(dailyUsage.entries()).map(([date, usage]) => ({
         date,
-        usage: parseFloat(usage.toFixed(2)),
+        usage: parseFloat(usage.toFixed(4)),
       }));
 
       return reply.send(result);
@@ -4649,19 +4649,27 @@ export async function buildServer() {
         }
 
         // Calculate total usage for percentage calculations
-        const totalUsage = Array.from(tagUsageMap.values()).reduce(
-          (sum, tag) => sum + tag.usage,
+        // Note: totalUsage should be the sum of actual usage entries, not tag attributions
+        // since each usage entry can be attributed to multiple tags
+        const actualTotalUsage = usageData.reduce(
+          (sum, usage) => sum + Number(usage.usd),
           0,
         );
-        const totalRequests = Array.from(tagUsageMap.values()).reduce(
-          (sum, tag) => sum + tag.requests,
+        const actualTotalRequests = usageData.length;
+
+        // For percentage calculations within tag analytics, we use tag attribution totals
+        const tagAttributionTotal = Array.from(tagUsageMap.values()).reduce(
+          (sum, tag) => sum + tag.usage,
           0,
         );
 
         // Convert to array with percentages
         const usageAnalytics = Array.from(tagUsageMap.values()).map((tag) => ({
           ...tag,
-          percentage: totalUsage > 0 ? (tag.usage / totalUsage) * 100 : 0,
+          percentage:
+            tagAttributionTotal > 0
+              ? (tag.usage / tagAttributionTotal) * 100
+              : 0,
         }));
 
         // Calculate budget health
@@ -4737,8 +4745,8 @@ export async function buildServer() {
           budgetHealth: budgetHealth,
           trends: [], // TODO: Implement trends calculation
           hierarchy: hierarchy,
-          totalUsage: totalUsage,
-          totalRequests: totalRequests,
+          totalUsage: actualTotalUsage,
+          totalRequests: actualTotalRequests,
           activeTags: activeTags,
           criticalBudgets: criticalBudgets,
         };
