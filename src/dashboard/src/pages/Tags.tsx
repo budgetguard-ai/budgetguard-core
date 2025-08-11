@@ -9,9 +9,11 @@ import {
   Alert,
   CircularProgress,
   Grid,
+  Button,
 } from "@mui/material";
 import { useDashboardStore } from "../hooks/useStore";
 import { useTenants } from "../hooks/useApi";
+import { apiClient } from "../services/api";
 import TagMetricsCards from "../components/charts/TagMetricsCards";
 import TagHierarchyTable from "../components/charts/TagHierarchyTable";
 import TagDrilldownChart from "../components/charts/TagDrilldownChart";
@@ -25,6 +27,7 @@ const Tags: React.FC = () => {
   const [analytics, setAnalytics] = useState<TagAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drilldownTag, setDrilldownTag] = useState<TagUsageData | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const { data: tenants = [], isLoading: tenantsLoading } = useTenants();
 
@@ -34,6 +37,16 @@ const Tags: React.FC = () => {
       setSelectedTenant(tenants[0]);
     }
   }, [tenants, selectedTenant, setSelectedTenant, tenantsLoading]);
+
+  // Retry function
+  const retryFetch = () => {
+    setRetryCount((prev) => prev + 1);
+  };
+
+  // Reset retry count when tenant or time range changes
+  useEffect(() => {
+    setRetryCount(0);
+  }, [selectedTenant, timeRange]);
 
   // Fetch tag analytics when tenant or time range changes
   useEffect(() => {
@@ -47,189 +60,56 @@ const Tags: React.FC = () => {
         "Fetching analytics for tenant:",
         selectedTenant.name,
         selectedTenant.id,
+        retryCount > 0 ? `(retry ${retryCount})` : "",
       );
       setIsLoading(true);
       setError(null);
-      setAnalytics(null); // Clear existing data
+      if (retryCount === 0) {
+        setAnalytics(null); // Only clear data on first attempt, not retries
+      }
 
       try {
-        // TODO: Replace with actual API call once backend endpoint is ready
-        // const analytics = await apiClient.getTagUsageAnalytics(selectedTenant.id, {
-        //   days: timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90,
-        // });
+        const analytics = await apiClient.getTagUsageAnalytics(
+          selectedTenant.id,
+          {
+            days: timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90,
+          },
+        );
 
-        // Mock data for now with better hierarchy
-        const mockAnalytics: TagAnalytics = {
-          usage: [
-            // Root tags
-            {
-              tagId: 1,
-              tagName: "production",
-              path: "production",
-              usage: 185.5,
-              requests: 4200,
-              percentage: 52.1,
-              color: "#FF6384",
-            },
-            {
-              tagId: 2,
-              tagName: "development",
-              path: "development",
-              usage: 98.3,
-              requests: 2400,
-              percentage: 27.6,
-              color: "#36A2EB",
-            },
-            // Production children
-            {
-              tagId: 3,
-              tagName: "api",
-              path: "production/api",
-              usage: 125.2,
-              requests: 2800,
-              percentage: 35.1,
-              color: "#FFCE56",
-            },
-            {
-              tagId: 4,
-              tagName: "web",
-              path: "production/web",
-              usage: 40.3,
-              requests: 950,
-              percentage: 11.3,
-              color: "#9966FF",
-            },
-            {
-              tagId: 5,
-              tagName: "worker",
-              path: "production/worker",
-              usage: 20.0,
-              requests: 450,
-              percentage: 5.6,
-              color: "#FF9F40",
-            },
-            // API children (grandchildren)
-            {
-              tagId: 6,
-              tagName: "v1",
-              path: "production/api/v1",
-              usage: 75.4,
-              requests: 1680,
-              percentage: 21.2,
-              color: "#C9CBCF",
-            },
-            {
-              tagId: 8,
-              tagName: "v2",
-              path: "production/api/v2",
-              usage: 49.8,
-              requests: 1120,
-              percentage: 14.0,
-              color: "#FF6B9D",
-            },
-            // Development children
-            {
-              tagId: 9,
-              tagName: "feature-branch",
-              path: "development/feature-branch",
-              usage: 55.1,
-              requests: 1350,
-              percentage: 15.5,
-              color: "#36D2EB",
-            },
-            {
-              tagId: 10,
-              tagName: "staging",
-              path: "development/staging",
-              usage: 43.2,
-              requests: 1050,
-              percentage: 12.1,
-              color: "#A0D468",
-            },
-          ],
-          budgetHealth: [
-            {
-              tagId: 1,
-              tagName: "production",
-              budgetId: 1,
-              period: "monthly",
-              budget: 200.0,
-              usage: 125.5,
-              percentage: 62.8,
-              weight: 1.0,
-              inheritanceMode: "STRICT",
-              status: "warning",
-            },
-            {
-              tagId: 1,
-              tagName: "production",
-              budgetId: 4,
-              period: "daily",
-              budget: 10.0,
-              usage: 6.2,
-              percentage: 62.0,
-              weight: 1.0,
-              inheritanceMode: "STRICT",
-              status: "warning",
-            },
-            {
-              tagId: 2,
-              tagName: "development",
-              budgetId: 2,
-              period: "monthly",
-              budget: 100.0,
-              usage: 78.3,
-              percentage: 78.3,
-              weight: 1.0,
-              inheritanceMode: "LENIENT",
-              status: "warning",
-            },
-          ],
-          trends: [],
-          hierarchy: [
-            {
-              id: 1,
-              name: "production",
-              path: "production",
-              usage: 170.7,
-              budget: 200.0,
-              children: [
-                {
-                  id: 3,
-                  name: "api/v1",
-                  path: "production/api/v1",
-                  usage: 45.2,
-                  children: [],
-                },
-              ],
-            },
-            {
-              id: 2,
-              name: "development",
-              path: "development",
-              usage: 78.3,
-              budget: 100.0,
-              children: [],
-            },
-          ],
-          totalUsage: 284.0,
-          totalRequests: 6600,
-          activeTags: 8,
-          criticalBudgets: 0,
+        // Validate and transform the analytics data
+        if (!analytics || typeof analytics !== "object") {
+          throw new Error("Invalid analytics data received");
+        }
+
+        // Ensure required fields exist with default values
+        const validatedAnalytics = {
+          usage: analytics.usage || [],
+          budgetHealth: analytics.budgetHealth || [],
+          trends: analytics.trends || [],
+          hierarchy: analytics.hierarchy || [],
+          totalUsage: analytics.totalUsage || 0,
+          totalRequests: analytics.totalRequests || 0,
+          activeTags: analytics.activeTags || 0,
+          criticalBudgets: analytics.criticalBudgets || 0,
         };
 
-        setAnalytics(mockAnalytics);
+        setAnalytics(validatedAnalytics);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load tag analytics",
-        );
+        console.error("Failed to fetch tag analytics:", err);
+        if (err instanceof Error) {
+          setError(err.message);
+        } else if (typeof err === "string") {
+          setError(err);
+        } else {
+          setError("Failed to load tag analytics. Please try again.");
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     void fetchTagAnalytics();
-  }, [selectedTenant, timeRange]);
+  }, [selectedTenant, timeRange, retryCount]);
 
   if (tenantsLoading) {
     return (
@@ -339,7 +219,15 @@ const Tags: React.FC = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={retryFetch}>
+              Retry
+            </Button>
+          }
+        >
           {error}
         </Alert>
       )}
@@ -356,7 +244,7 @@ const Tags: React.FC = () => {
           <Box sx={{ mb: 3 }}>
             <TagMetricsCards
               analytics={analytics}
-              totalTenantUsage={400.0} // Mock total tenant usage including untagged
+              totalTenantUsage={analytics.totalUsage}
             />
           </Box>
 
@@ -369,7 +257,7 @@ const Tags: React.FC = () => {
                 title="Tag Usage Analytics"
                 width={drilldownTag ? 600 : 800}
                 height={500}
-                totalBudgetUsage={400.0} // Mock total including untagged usage
+                totalBudgetUsage={analytics.totalUsage}
               />
             </Grid>
 
