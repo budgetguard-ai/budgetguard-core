@@ -13,6 +13,7 @@ import { Add as AddIcon } from "@mui/icons-material";
 import { apiClient } from "../services/api";
 import { useDashboardStore } from "../hooks/useStore";
 import TagCreateDialog from "../components/forms/TagCreateDialog";
+import TagEditDialog from "../components/forms/TagEditDialog";
 import TagBudgetManagementDialog from "../components/forms/TagBudgetManagementDialog";
 import UnifiedTagTable from "../components/tag/UnifiedTagTable";
 import type { Tenant, Tag, TagBudget } from "../types";
@@ -30,6 +31,10 @@ const TagManagement: React.FC = () => {
   const [budgetManagementDialogOpen, setBudgetManagementDialogOpen] =
     useState(false);
   const [selectedTagForBudget, setSelectedTagForBudget] = useState<Tag | null>(
+    null,
+  );
+  const [editTagDialogOpen, setEditTagDialogOpen] = useState(false);
+  const [selectedTagForEdit, setSelectedTagForEdit] = useState<Tag | null>(
     null,
   );
 
@@ -101,9 +106,18 @@ const TagManagement: React.FC = () => {
     setSelectedParentForCreate(null);
   };
 
-  const handleEditTag = async (tag: Tag) => {
-    // TODO: Implement edit functionality
-    console.log("Edit tag:", tag);
+  const handleEditTag = (tag: Tag) => {
+    setSelectedTagForEdit(tag);
+    setEditTagDialogOpen(true);
+  };
+
+  const handleTagEdited = (updatedTag: Tag) => {
+    // Update the local state with the already-saved tag from the dialog
+    setTags((prev) =>
+      prev.map((t) => (t.id === updatedTag.id ? updatedTag : t)),
+    );
+    setEditTagDialogOpen(false);
+    setSelectedTagForEdit(null);
   };
 
   const handleDeleteTag = async (tag: Tag) => {
@@ -273,6 +287,21 @@ const TagManagement: React.FC = () => {
           tenantId={selectedTenant.id}
           existingTags={tags}
           preselectedParent={selectedParentForCreate}
+        />
+      )}
+
+      {/* Tag Edit Dialog */}
+      {selectedTenant && selectedTagForEdit && (
+        <TagEditDialog
+          open={editTagDialogOpen}
+          onClose={() => {
+            setEditTagDialogOpen(false);
+            setSelectedTagForEdit(null);
+          }}
+          onSuccess={handleTagEdited}
+          tenantId={selectedTenant.id}
+          existingTags={tags}
+          tagToEdit={selectedTagForEdit}
         />
       )}
 

@@ -355,15 +355,32 @@ class ApiClient {
     const tags = await this.getTenantTags(tenantId, true);
     const allBudgets: TagBudget[] = [];
 
-    for (const tag of tags) {
-      try {
-        const tagBudgets = await this.request<TagBudget[]>(
-          `/admin/tenant/${tenantId}/tags/${tag.id}/budgets`,
+    // Use concurrent requests for better performance
+    const budgetPromises = tags.map((tag) =>
+      this.request<TagBudget[]>(
+        `/admin/tenant/${tenantId}/tags/${tag.id}/budgets`,
+      )
+        .then((budgets) => ({
+          status: "fulfilled" as const,
+          value: budgets,
+          tag,
+        }))
+        .catch((error) => ({
+          status: "rejected" as const,
+          reason: error,
+          tag,
+        })),
+    );
+
+    const results = await Promise.all(budgetPromises);
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        allBudgets.push(...result.value);
+      } else {
+        console.warn(
+          `Failed to fetch budgets for tag ${result.tag.id}:`,
+          result.reason,
         );
-        allBudgets.push(...tagBudgets);
-      } catch (error) {
-        // Skip tags that have no budgets or errors
-        console.warn(`Failed to fetch budgets for tag ${tag.id}:`, error);
       }
     }
 
