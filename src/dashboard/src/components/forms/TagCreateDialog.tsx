@@ -67,8 +67,13 @@ const TagCreateDialog: React.FC<TagCreateDialogProps> = ({
     const siblingsAndSelf = existingTags.filter(
       (tag) => tag.parentId === selectedParentId,
     );
+    // Check for duplicate names (case-insensitive with Unicode normalization)
+    const collator = new Intl.Collator(undefined, {
+      sensitivity: "base",
+      usage: "search",
+    });
     const nameExists = siblingsAndSelf.some(
-      (tag) => tag.name.toLowerCase() === formData.name.trim().toLowerCase(),
+      (tag) => collator.compare(tag.name, formData.name.trim()) === 0,
     );
 
     if (nameExists) {

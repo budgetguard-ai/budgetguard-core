@@ -81,6 +81,8 @@ const TagBudgetManagementDialog: React.FC<TagBudgetManagementDialogProps> = ({
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState<TagBudget | null>(null);
 
   // Filter budgets for this specific tag
   const tagBudgets = existingBudgets.filter(
@@ -180,7 +182,6 @@ const TagBudgetManagementDialog: React.FC<TagBudgetManagementDialogProps> = ({
         };
 
         const updatedBudget = await apiClient.updateTagBudget(
-          tenantId,
           editingBudget.id,
           updateData,
         );
@@ -201,32 +202,36 @@ const TagBudgetManagementDialog: React.FC<TagBudgetManagementDialogProps> = ({
     }
   };
 
-  const handleDeleteBudget = async (budget: TagBudget) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete the ${budget.period} budget of ${formatCurrency(parseFloat(budget.amountUsd))}?`,
-      )
-    ) {
-      return;
-    }
+  const handleDeleteBudget = (budget: TagBudget) => {
+    setBudgetToDelete(budget);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!budgetToDelete) return;
 
     try {
-      await apiClient.deleteTagBudget(tenantId, budget.id);
-      onBudgetDelete(budget.id);
+      await apiClient.deleteTagBudget(budgetToDelete.id);
+      onBudgetDelete(budgetToDelete.id);
+      setDeleteConfirmOpen(false);
+      setBudgetToDelete(null);
     } catch (err) {
       console.error("Failed to delete budget:", err);
+      setDeleteConfirmOpen(false);
+      setBudgetToDelete(null);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteConfirmOpen(false);
+    setBudgetToDelete(null);
   };
 
   const handleToggleBudgetActive = async (budget: TagBudget) => {
     try {
-      const updatedBudget = await apiClient.updateTagBudget(
-        tenantId,
-        budget.id,
-        {
-          isActive: !budget.isActive,
-        },
-      );
+      const updatedBudget = await apiClient.updateTagBudget(budget.id, {
+        isActive: !budget.isActive,
+      });
       onBudgetUpdate(updatedBudget);
     } catch (err) {
       console.error("Failed to toggle budget status:", err);
@@ -574,6 +579,35 @@ const TagBudgetManagementDialog: React.FC<TagBudgetManagementDialogProps> = ({
               </Button>
             </>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={handleCancelDelete}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Delete Budget</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the {budgetToDelete?.period} budget
+            of{" "}
+            {budgetToDelete &&
+              formatCurrency(parseFloat(budgetToDelete.amountUsd))}
+            ?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete}>Cancel</Button>
+          <Button
+            onClick={handleConfirmDelete}
+            color="error"
+            variant="contained"
+          >
+            Delete Budget
+          </Button>
         </DialogActions>
       </Dialog>
     </LocalizationProvider>

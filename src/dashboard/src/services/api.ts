@@ -401,45 +401,23 @@ class ApiClient {
   }
 
   async updateTagBudget(
-    tenantId: number,
     budgetId: number,
     data: UpdateTagBudgetRequest,
   ): Promise<TagBudget> {
-    // Need to find which tag this budget belongs to
-    const allBudgets = await this.getTagBudgets(tenantId);
-    const budget = allBudgets.find((b) => b.id === budgetId);
-
-    if (!budget) {
-      throw new Error(`Budget ${budgetId} not found`);
-    }
-
-    return this.request<TagBudget>(
-      `/admin/tenant/${tenantId}/tags/${budget.tagId}/budgets/${budgetId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(data),
-      },
-    );
+    return this.request<TagBudget>(`/admin/budget/tag/${budgetId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 
-  async deleteTagBudget(
-    tenantId: number,
-    budgetId: number,
-  ): Promise<{ ok: boolean }> {
-    // Need to find which tag this budget belongs to
-    const allBudgets = await this.getTagBudgets(tenantId);
-    const budget = allBudgets.find((b) => b.id === budgetId);
-
-    if (!budget) {
-      throw new Error(`Budget ${budgetId} not found`);
-    }
-
-    return this.request<{ ok: boolean }>(
-      `/admin/tenant/${tenantId}/tags/${budget.tagId}/budgets/${budgetId}`,
+  async deleteTagBudget(budgetId: number): Promise<{ ok: boolean }> {
+    const result = await this.request<{ success: boolean }>(
+      `/admin/budget/tag/${budgetId}`,
       {
         method: "DELETE",
       },
     );
+    return { ok: result.success };
   }
 
   // Tag analytics endpoints
