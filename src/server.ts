@@ -4454,6 +4454,303 @@ export async function buildServer() {
     },
   );
 
+  // Tag Analytics endpoint
+  app.get(
+    "/admin/tenant/:tenantId/tag-analytics",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Analytics"],
+        summary: "Get tag usage analytics for a tenant",
+        description:
+          "Retrieve comprehensive tag usage analytics including usage data, budget health, trends, and hierarchy",
+        params: {
+          type: "object",
+          properties: { tenantId: { type: "string" } },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            days: { type: "number", minimum: 1, maximum: 365 },
+            startDate: { type: "string", format: "date" },
+            endDate: { type: "string", format: "date" },
+            tagId: { type: "array", items: { type: "number" } },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              usage: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tagId: { type: "number" },
+                    tagName: { type: "string" },
+                    path: { type: "string" },
+                    usage: { type: "number" },
+                    requests: { type: "number" },
+                    percentage: { type: "number" },
+                    color: { type: "string" },
+                  },
+                },
+              },
+              budgetHealth: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tagId: { type: "number" },
+                    tagName: { type: "string" },
+                    budgetId: { type: "number" },
+                    period: { type: "string" },
+                    budget: { type: "number" },
+                    usage: { type: "number" },
+                    percentage: { type: "number" },
+                    weight: { type: "number" },
+                    inheritanceMode: { type: "string" },
+                    status: { type: "string" },
+                  },
+                },
+              },
+              trends: { type: "array" },
+              hierarchy: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "number" },
+                    name: { type: "string" },
+                    path: { type: "string" },
+                    usage: { type: "number" },
+                    budget: { type: "number" },
+                    children: { type: "array" },
+                  },
+                },
+              },
+              totalUsage: { type: "number" },
+              totalRequests: { type: "number" },
+              activeTags: { type: "number" },
+              criticalBudgets: { type: "number" },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const tenantIdNum = Number(tenantId);
+
+      const {
+        days = 30,
+        startDate,
+        endDate,
+        tagId: tagIds,
+      } = req.query as {
+        days?: number;
+        startDate?: string;
+        endDate?: string;
+        tagId?: number[];
+      };
+
+      try {
+        // Check if tenant exists
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+        });
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        // Calculate date range
+        const endDateTime = endDate ? new Date(endDate) : new Date();
+        const startDateTime = startDate
+          ? new Date(startDate)
+          : new Date(endDateTime.getTime() - days * 24 * 60 * 60 * 1000);
+
+        // Get all tags for the tenant
+        const tags = await prisma.tag.findMany({
+          where: {
+            tenantId: tenantIdNum,
+            isActive: true,
+            ...(tagIds && tagIds.length > 0 ? { id: { in: tagIds } } : {}),
+          },
+          include: {
+            parent: true,
+            children: true,
+            budgets: {
+              where: { isActive: true },
+            },
+          },
+        });
+
+        // Get usage data with tag associations
+        const usageData = await prisma.usageLedger.findMany({
+          where: {
+            tenantId: tenantIdNum,
+            ts: {
+              gte: startDateTime,
+              lte: endDateTime,
+            },
+            tags: {
+              some: {
+                tag: {
+                  id: tagIds && tagIds.length > 0 ? { in: tagIds } : undefined,
+                  isActive: true,
+                },
+              },
+            },
+          },
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
+          },
+        });
+
+        // Calculate tag usage aggregations
+        const tagUsageMap = new Map<
+          number,
+          {
+            tagId: number;
+            tagName: string;
+            path: string;
+            usage: number;
+            requests: number;
+            color?: string;
+          }
+        >();
+
+        for (const usage of usageData) {
+          for (const tagAssoc of usage.tags) {
+            const tag = tagAssoc.tag;
+            const key = tag.id;
+
+            if (!tagUsageMap.has(key)) {
+              tagUsageMap.set(key, {
+                tagId: tag.id,
+                tagName: tag.name,
+                path: tag.path || "",
+                usage: 0,
+                requests: 0,
+                color: tag.color || undefined,
+              });
+            }
+
+            const tagUsage = tagUsageMap.get(key)!;
+            tagUsage.usage += Number(usage.usd) * (tagAssoc.weight || 1.0);
+            tagUsage.requests += 1;
+          }
+        }
+
+        // Calculate total usage for percentage calculations
+        const totalUsage = Array.from(tagUsageMap.values()).reduce(
+          (sum, tag) => sum + tag.usage,
+          0,
+        );
+        const totalRequests = Array.from(tagUsageMap.values()).reduce(
+          (sum, tag) => sum + tag.requests,
+          0,
+        );
+
+        // Convert to array with percentages
+        const usageAnalytics = Array.from(tagUsageMap.values()).map((tag) => ({
+          ...tag,
+          percentage: totalUsage > 0 ? (tag.usage / totalUsage) * 100 : 0,
+        }));
+
+        // Calculate budget health
+        const budgetHealth = [];
+        for (const tag of tags) {
+          for (const budget of tag.budgets) {
+            const tagUsage = tagUsageMap.get(tag.id);
+            const usage = tagUsage ? tagUsage.usage : 0;
+            const budgetAmount = Number(budget.amountUsd);
+            const percentage =
+              budgetAmount > 0 ? (usage / budgetAmount) * 100 : 0;
+
+            let status = "healthy";
+            if (percentage >= 90) status = "critical";
+            else if (percentage >= 70) status = "warning";
+
+            budgetHealth.push({
+              tagId: tag.id,
+              tagName: tag.name,
+              budgetId: budget.id,
+              period: budget.period,
+              budget: budgetAmount,
+              usage: usage,
+              percentage: percentage,
+              weight: budget.weight,
+              inheritanceMode: budget.inheritanceMode,
+              status: status,
+            });
+          }
+        }
+
+        // Build hierarchy
+        interface HierarchyNode {
+          id: number;
+          name: string;
+          path: string;
+          usage: number;
+          budget?: number;
+          children: HierarchyNode[];
+        }
+
+        const buildHierarchy = (parentId: number | null): HierarchyNode[] => {
+          return tags
+            .filter((tag) => tag.parentId === parentId)
+            .map((tag) => {
+              const tagUsage = tagUsageMap.get(tag.id);
+              const budget =
+                tag.budgets.length > 0
+                  ? Number(tag.budgets[0].amountUsd)
+                  : undefined;
+
+              return {
+                id: tag.id,
+                name: tag.name,
+                path: tag.path || "",
+                usage: tagUsage ? tagUsage.usage : 0,
+                budget: budget,
+                children: buildHierarchy(tag.id),
+              };
+            });
+        };
+
+        const hierarchy = buildHierarchy(null);
+
+        // Calculate summary metrics
+        const activeTags = tags.length;
+        const criticalBudgets = budgetHealth.filter(
+          (b) => b.status === "critical",
+        ).length;
+
+        const response = {
+          usage: usageAnalytics,
+          budgetHealth: budgetHealth,
+          trends: [], // TODO: Implement trends calculation
+          hierarchy: hierarchy,
+          totalUsage: totalUsage,
+          totalRequests: totalRequests,
+          activeTags: activeTags,
+          criticalBudgets: criticalBudgets,
+        };
+
+        return reply.send(response);
+      } catch (error) {
+        console.error("Error fetching tag analytics:", error);
+        return reply.code(500).send({ error: "Failed to fetch tag analytics" });
+      }
+    },
+  );
+
   return app;
 }
 
