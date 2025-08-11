@@ -3880,7 +3880,100 @@ export async function buildServer() {
       schema: {
         tags: ["Tag Management"],
         summary: "Delete tag",
-        description: "Soft delete a tag (sets isActive to false)",
+        description:
+          "Permanently delete a tag and all associated data (budgets, usage records)",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        response: {
+          200: { type: "object", properties: { success: { type: "boolean" } } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Check if tag exists
+        const tag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum },
+          include: {
+            children: true,
+            tenant: true,
+          },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        // Check if tag has children (both active and inactive)
+        if (tag.children.length > 0) {
+          return reply.code(400).send({
+            error: "Cannot delete tag with children. Delete children first.",
+          });
+        }
+
+        // Use transaction to ensure all related data is deleted consistently
+        await prisma.$transaction(async (tx) => {
+          // Delete related records in correct order to handle foreign key constraints
+          await tx.requestTag.deleteMany({ where: { tagId: tagIdNum } });
+          await tx.tagBudget.deleteMany({ where: { tagId: tagIdNum } });
+
+          // Finally delete the tag itself
+          await tx.tag.delete({ where: { id: tagIdNum } });
+        });
+
+        // Clean up Redis cache
+        if (redisClient && tag.tenant) {
+          try {
+            // Delete tag budget cache for all periods
+            for (const period of BUDGET_PERIODS) {
+              await redisClient.del(
+                `tag_budget:${tag.tenant.name}:${tag.name}:${period}`,
+              );
+            }
+          } catch (redisError) {
+            console.warn(
+              "Error cleaning up Redis cache for deleted tag:",
+              redisError,
+            );
+            // Don't fail the request if Redis cleanup fails
+          }
+        }
+
+        // Invalidate tag cache for this tenant
+        await invalidateTagCache(tenantIdNum, redisClient);
+
+        return reply.send({ success: true });
+      } catch (error) {
+        console.error("Error deleting tag:", error);
+        return reply.code(500).send({ error: "Failed to delete tag" });
+      }
+    },
+  );
+
+  // Tag deactivation endpoint (soft delete - sets isActive to false)
+  app.patch(
+    "/admin/tenant/:tenantId/tags/:tagId/deactivate",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Deactivate tag",
+        description:
+          "Soft delete a tag (sets isActive to false) without removing data",
         params: {
           type: "object",
           properties: {
@@ -3918,7 +4011,7 @@ export async function buildServer() {
         if (tag.children.length > 0) {
           return reply.code(400).send({
             error:
-              "Cannot delete tag with active children. Deactivate children first.",
+              "Cannot deactivate tag with active children. Deactivate children first.",
           });
         }
 
@@ -3933,8 +4026,67 @@ export async function buildServer() {
 
         return reply.send({ success: true });
       } catch (error) {
-        console.error("Error deleting tag:", error);
-        return reply.code(500).send({ error: "Failed to delete tag" });
+        console.error("Error deactivating tag:", error);
+        return reply.code(500).send({ error: "Failed to deactivate tag" });
+      }
+    },
+  );
+
+  // Tag reactivation endpoint
+  app.patch(
+    "/admin/tenant/:tenantId/tags/:tagId/activate",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Tag Management"],
+        summary: "Activate tag",
+        description:
+          "Reactivate a previously deactivated tag (sets isActive to true)",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            tagId: { type: "string" },
+          },
+          required: ["tenantId", "tagId"],
+        },
+        response: {
+          200: { type: "object", properties: { success: { type: "boolean" } } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, tagId } = req.params as {
+        tenantId: string;
+        tagId: string;
+      };
+      const tenantIdNum = Number(tenantId);
+      const tagIdNum = Number(tagId);
+
+      try {
+        // Check if tag exists
+        const tag = await prisma.tag.findFirst({
+          where: { id: tagIdNum, tenantId: tenantIdNum },
+        });
+
+        if (!tag) {
+          return reply.code(404).send({ error: "Tag not found" });
+        }
+
+        // Reactivate the tag
+        await prisma.tag.update({
+          where: { id: tagIdNum },
+          data: { isActive: true },
+        });
+
+        // Invalidate tag cache for this tenant
+        await invalidateTagCache(tenantIdNum, redisClient);
+
+        return reply.send({ success: true });
+      } catch (error) {
+        console.error("Error activating tag:", error);
+        return reply.code(500).send({ error: "Failed to activate tag" });
       }
     },
   );
