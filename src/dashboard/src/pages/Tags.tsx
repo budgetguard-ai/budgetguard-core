@@ -38,10 +38,19 @@ const Tags: React.FC = () => {
   // Fetch tag analytics when tenant or time range changes
   useEffect(() => {
     const fetchTagAnalytics = async () => {
-      if (!selectedTenant) return;
+      if (!selectedTenant) {
+        setAnalytics(null);
+        return;
+      }
 
+      console.log(
+        "Fetching analytics for tenant:",
+        selectedTenant.name,
+        selectedTenant.id,
+      );
       setIsLoading(true);
       setError(null);
+      setAnalytics(null); // Clear existing data
 
       try {
         // TODO: Replace with actual API call once backend endpoint is ready
@@ -70,15 +79,6 @@ const Tags: React.FC = () => {
               requests: 2400,
               percentage: 27.6,
               color: "#36A2EB",
-            },
-            {
-              tagId: 7,
-              tagName: "testing",
-              path: "testing",
-              usage: 72.2,
-              requests: 1590,
-              percentage: 20.3,
-              color: "#4BC0C0",
             },
             // Production children
             {
@@ -184,30 +184,6 @@ const Tags: React.FC = () => {
               inheritanceMode: "LENIENT",
               status: "warning",
             },
-            {
-              tagId: 7,
-              tagName: "testing",
-              budgetId: 3,
-              period: "monthly",
-              budget: 50.0,
-              usage: 28.9,
-              percentage: 57.8,
-              weight: 1.0,
-              inheritanceMode: "NONE",
-              status: "healthy",
-            },
-            {
-              tagId: 7,
-              tagName: "testing",
-              budgetId: 5,
-              period: "daily",
-              budget: 2.0,
-              usage: 1.2,
-              percentage: 60.0,
-              weight: 1.0,
-              inheritanceMode: "NONE",
-              status: "warning",
-            },
           ],
           trends: [],
           hierarchy: [
@@ -235,18 +211,10 @@ const Tags: React.FC = () => {
               budget: 100.0,
               children: [],
             },
-            {
-              id: 4,
-              name: "testing",
-              path: "testing",
-              usage: 28.9,
-              budget: 50.0,
-              children: [],
-            },
           ],
-          totalUsage: 356.0,
-          totalRequests: 8190,
-          activeTags: 10,
+          totalUsage: 284.0,
+          totalRequests: 6600,
+          activeTags: 8,
           criticalBudgets: 0,
         };
 

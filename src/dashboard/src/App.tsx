@@ -14,6 +14,7 @@ import UsageHistory from "./pages/UsageHistory";
 import Models from "./pages/Models";
 import Settings from "./pages/Settings";
 import Tags from "./pages/Tags";
+import TagManagement from "./pages/TagManagement";
 
 const App: FC = () => {
   return (
@@ -24,6 +25,7 @@ const App: FC = () => {
             <Route path="/" element={<Navigate to="/usage" replace />} />
             <Route path="/overview" element={<Overview />} />
             <Route path="/tags" element={<Tags />} />
+            <Route path="/tag-management" element={<TagManagement />} />
             <Route path="/tenants" element={<Tenants />} />
             <Route path="/usage" element={<Usage />} />
             <Route path="/usage-history" element={<UsageHistory />} />

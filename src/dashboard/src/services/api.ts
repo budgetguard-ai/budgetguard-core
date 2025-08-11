@@ -351,17 +351,36 @@ class ApiClient {
 
   // Tag budget management endpoints
   async getTagBudgets(tenantId: number): Promise<TagBudget[]> {
-    return this.request<TagBudget[]>(`/admin/tenant/${tenantId}/tag-budgets`);
+    // Get all budgets for all tags of this tenant
+    const tags = await this.getTenantTags(tenantId, true);
+    const allBudgets: TagBudget[] = [];
+
+    for (const tag of tags) {
+      try {
+        const tagBudgets = await this.request<TagBudget[]>(
+          `/admin/tenant/${tenantId}/tags/${tag.id}/budgets`,
+        );
+        allBudgets.push(...tagBudgets);
+      } catch (error) {
+        // Skip tags that have no budgets or errors
+        console.warn(`Failed to fetch budgets for tag ${tag.id}:`, error);
+      }
+    }
+
+    return allBudgets;
   }
 
   async createTagBudget(
     tenantId: number,
     data: CreateTagBudgetRequest,
   ): Promise<TagBudget> {
-    return this.request<TagBudget>(`/admin/tenant/${tenantId}/tag-budgets`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
+    return this.request<TagBudget>(
+      `/admin/tenant/${tenantId}/tags/${data.tagId}/budgets`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    );
   }
 
   async updateTagBudget(
@@ -369,8 +388,16 @@ class ApiClient {
     budgetId: number,
     data: UpdateTagBudgetRequest,
   ): Promise<TagBudget> {
+    // Need to find which tag this budget belongs to
+    const allBudgets = await this.getTagBudgets(tenantId);
+    const budget = allBudgets.find((b) => b.id === budgetId);
+
+    if (!budget) {
+      throw new Error(`Budget ${budgetId} not found`);
+    }
+
     return this.request<TagBudget>(
-      `/admin/tenant/${tenantId}/tag-budgets/${budgetId}`,
+      `/admin/tenant/${tenantId}/tags/${budget.tagId}/budgets/${budgetId}`,
       {
         method: "PUT",
         body: JSON.stringify(data),
@@ -382,8 +409,16 @@ class ApiClient {
     tenantId: number,
     budgetId: number,
   ): Promise<{ ok: boolean }> {
+    // Need to find which tag this budget belongs to
+    const allBudgets = await this.getTagBudgets(tenantId);
+    const budget = allBudgets.find((b) => b.id === budgetId);
+
+    if (!budget) {
+      throw new Error(`Budget ${budgetId} not found`);
+    }
+
     return this.request<{ ok: boolean }>(
-      `/admin/tenant/${tenantId}/tag-budgets/${budgetId}`,
+      `/admin/tenant/${tenantId}/tags/${budget.tagId}/budgets/${budgetId}`,
       {
         method: "DELETE",
       },

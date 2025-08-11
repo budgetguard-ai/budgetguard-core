@@ -182,8 +182,10 @@ const TagHierarchyTable: React.FC<TagHierarchyTableProps> = ({
           hover
           sx={{
             "&:nth-of-type(odd)": {
-              backgroundColor: (theme) => 
-                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.02)' : "action.hover",
+              backgroundColor: (theme) =>
+                theme.palette.mode === "dark"
+                  ? "rgba(255, 255, 255, 0.02)"
+                  : "action.hover",
             },
           }}
         >
@@ -327,12 +329,12 @@ const TagHierarchyTable: React.FC<TagHierarchyTableProps> = ({
           {title}
         </Typography>
 
-        <TableContainer 
-          component={Paper} 
-          sx={{ 
+        <TableContainer
+          component={Paper}
+          sx={{
             maxHeight: 600,
-            backgroundColor: (theme) => 
-              theme.palette.mode === 'dark' ? 'rgba(0, 0, 0, 0.3)' : undefined
+            backgroundColor: (theme) =>
+              theme.palette.mode === "dark" ? "rgba(0, 0, 0, 0.3)" : undefined,
           }}
         >
           <Table size="small" stickyHeader>
