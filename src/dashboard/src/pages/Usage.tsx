@@ -97,9 +97,11 @@ const Usage: React.FC = () => {
     );
   }
 
-  const totalUsage = Object.values(
-    rawUsageData as Record<string, number>,
-  ).reduce((sum: number, val: number) => sum + val, 0);
+  // Use model breakdown data to match the pie chart center total
+  const totalUsage = data.modelBreakdown.reduce(
+    (sum, item) => sum + item.usage,
+    0,
+  );
   const activeBudgets = data.budgetHealth.length;
   const criticalBudgets = data.budgetHealth.filter(
     (b) => b.status === "critical",

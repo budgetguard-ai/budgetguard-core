@@ -24,12 +24,14 @@ import {
   DarkMode as DarkModeIcon,
   History as HistoryIcon,
   SmartToy as ModelsIcon,
+  Analytics as AnalyticsIcon,
+  LocalOffer as TagIcon,
 } from "@mui/icons-material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDashboardStore } from "../../hooks/useStore";
 import logoPng from "../../assets/logo.png";
 
-const drawerWidth = 280;
+const drawerWidth = 240;
 
 interface NavigationItem {
   text: string;
@@ -39,6 +41,12 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/usage" },
+  { text: "Tag Analytics", icon: <AnalyticsIcon />, path: "/tags" },
+  {
+    text: "Tag Management",
+    icon: <TagIcon />,
+    path: "/tag-management",
+  },
   { text: "Tenants", icon: <PeopleIcon />, path: "/tenants" },
   { text: "Usage History", icon: <HistoryIcon />, path: "/usage-history" },
   { text: "Models", icon: <ModelsIcon />, path: "/models" },

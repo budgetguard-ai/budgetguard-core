@@ -165,3 +165,134 @@ export interface BudgetChartData {
     backgroundColor: string[];
   }>;
 }
+
+// Tag-related types
+export interface Tag {
+  id: number;
+  tenantId: number;
+  name: string;
+  description?: string;
+  color?: string;
+  path: string;
+  parentId?: number;
+  isActive: boolean;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  parent?: Tag;
+  children?: Tag[];
+}
+
+export interface TagBudget {
+  id: number;
+  tagId: number;
+  period: "daily" | "monthly" | "custom";
+  amountUsd: string; // Decimal as string
+  weight: number;
+  inheritanceMode: "STRICT" | "LENIENT" | "NONE";
+  isActive: boolean;
+  startDate?: string;
+  endDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  tag?: Tag;
+  currentUsage?: number;
+}
+
+export interface TagUsageData {
+  tagId: number;
+  tagName: string;
+  path: string;
+  usage: number;
+  requests: number;
+  percentage: number;
+  color?: string;
+}
+
+export interface TagBudgetHealth {
+  tagId: number;
+  tagName: string;
+  budgetId: number;
+  period: string;
+  budget: number;
+  usage: number;
+  percentage: number;
+  weight: number;
+  inheritanceMode: string;
+  status: "healthy" | "warning" | "critical";
+  daysRemaining?: number;
+}
+
+export interface TagTrendData {
+  date: string;
+  tagUsage: Array<{
+    tagId: number;
+    tagName: string;
+    usage: number;
+  }>;
+}
+
+export interface TagHierarchyNode {
+  id: number;
+  name: string;
+  path: string;
+  usage: number;
+  budget?: number;
+  children: TagHierarchyNode[];
+  parent?: TagHierarchyNode;
+}
+
+// Tag request/response types
+export interface CreateTagRequest {
+  name: string;
+  description?: string;
+  color?: string;
+  parentId?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateTagRequest {
+  name?: string;
+  description?: string;
+  color?: string;
+  metadata?: Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export interface CreateTagBudgetRequest {
+  tagId: number;
+  period: "daily" | "monthly" | "custom";
+  amountUsd: number;
+  weight?: number;
+  inheritanceMode?: "STRICT" | "LENIENT" | "NONE";
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface UpdateTagBudgetRequest {
+  period?: "daily" | "monthly" | "custom";
+  amountUsd?: number;
+  weight?: number;
+  inheritanceMode?: "STRICT" | "LENIENT" | "NONE";
+  isActive?: boolean;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface TagAnalyticsParams {
+  days?: number;
+  startDate?: string;
+  endDate?: string;
+  tagIds?: number[];
+}
+
+export interface TagAnalytics {
+  usage: TagUsageData[];
+  budgetHealth: TagBudgetHealth[];
+  trends: TagTrendData[];
+  hierarchy: TagHierarchyNode[];
+  totalUsage: number;
+  totalRequests: number;
+  activeTags: number;
+  criticalBudgets: number;
+}
