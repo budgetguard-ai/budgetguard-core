@@ -28,7 +28,9 @@ import { useTenants } from "../hooks/useApi";
 
 const Usage: React.FC = () => {
   const { selectedTenant, setSelectedTenant } = useDashboardStore();
-  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
+  const [timeRange, setTimeRange] = useState<
+    "1w" | "lw" | "1m" | "lm" | "7d" | "30d" | "90d"
+  >("1m");
   const { data: tenants = [], isLoading: tenantsLoading } = useTenants();
   const { data, isLoading, rawUsageData } = useUsageAnalytics(
     selectedTenant,
@@ -146,9 +148,22 @@ const Usage: React.FC = () => {
               value={timeRange}
               label="Time Range"
               onChange={(e) =>
-                setTimeRange(e.target.value as "7d" | "30d" | "90d")
+                setTimeRange(
+                  e.target.value as
+                    | "1w"
+                    | "lw"
+                    | "1m"
+                    | "lm"
+                    | "7d"
+                    | "30d"
+                    | "90d",
+                )
               }
             >
+              <MenuItem value="1w">This week</MenuItem>
+              <MenuItem value="lw">Last week</MenuItem>
+              <MenuItem value="1m">This month</MenuItem>
+              <MenuItem value="lm">Last month</MenuItem>
               <MenuItem value="7d">Last 7 days</MenuItem>
               <MenuItem value="30d">Last 30 days</MenuItem>
               <MenuItem value="90d">Last 90 days</MenuItem>

@@ -166,20 +166,42 @@ class ApiClient {
 
   async getTenantUsageHistory(
     tenantId: number,
-    days: number = 30,
+    options?: {
+      days?: number;
+      startDate?: string;
+      endDate?: string;
+    },
   ): Promise<Array<{ date: string; usage: number }>> {
+    const params = new URLSearchParams();
+    if (options?.days) params.append("days", options.days.toString());
+    if (options?.startDate) params.append("startDate", options.startDate);
+    if (options?.endDate) params.append("endDate", options.endDate);
+
+    const queryString = params.toString();
     return this.request<Array<{ date: string; usage: number }>>(
-      `/admin/tenant/${tenantId}/usage/history?days=${days}`,
+      `/admin/tenant/${tenantId}/usage/history${queryString ? `?${queryString}` : ""}`,
     );
   }
 
   async getTenantModelBreakdown(
     tenantId: number,
-    days: number = 30,
+    options?: {
+      days?: number;
+      startDate?: string;
+      endDate?: string;
+    },
   ): Promise<Array<{ model: string; usage: number; percentage: number }>> {
+    const params = new URLSearchParams();
+    if (options?.days) params.append("days", options.days.toString());
+    if (options?.startDate) params.append("startDate", options.startDate);
+    if (options?.endDate) params.append("endDate", options.endDate);
+
+    const queryString = params.toString();
     return this.request<
       Array<{ model: string; usage: number; percentage: number }>
-    >(`/admin/tenant/${tenantId}/usage/models?days=${days}`);
+    >(
+      `/admin/tenant/${tenantId}/usage/models${queryString ? `?${queryString}` : ""}`,
+    );
   }
 
   async getTenantUsageLedger(
