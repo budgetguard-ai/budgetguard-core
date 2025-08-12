@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { apiClient } from "../services/api";
+import { getDateRangeForRange } from "../utils/dateRange";
 import type { Tenant } from "../types";
 
 interface ModelUsageData {
@@ -53,7 +54,7 @@ const MODEL_COLORS = [
 
 export const useUsageAnalytics = (
   tenant: Tenant | null,
-  timeRange: "7d" | "30d" | "90d" = "30d",
+  timeRange: "1w" | "lw" | "1m" | "lm" | "7d" | "30d" | "90d" = "30d",
 ) => {
   // Fetch usage data
   const { data: usageData = {}, isLoading: usageLoading } = useQuery({
@@ -64,28 +65,14 @@ export const useUsageAnalytics = (
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  // Fetch historical usage data
-  const getDaysForRange = (range: string) => {
-    switch (range) {
-      case "7d":
-        return 7;
-      case "30d":
-        return 30;
-      case "90d":
-        return 90;
-      default:
-        return 30;
-    }
-  };
-
-  const daysCount = getDaysForRange(timeRange);
+  const dateRangeOptions = getDateRangeForRange(timeRange);
 
   const { data: historicalUsage = [], isLoading: historicalLoading } = useQuery(
     {
       queryKey: ["tenant-usage-history", tenant?.id, timeRange],
       queryFn: () =>
         tenant
-          ? apiClient.getTenantUsageHistory(tenant.id, daysCount)
+          ? apiClient.getTenantUsageHistory(tenant.id, dateRangeOptions)
           : Promise.resolve([]),
       enabled: !!tenant,
       refetchInterval: 60000, // Refetch every minute
@@ -97,7 +84,7 @@ export const useUsageAnalytics = (
     queryKey: ["tenant-model-breakdown", tenant?.id, timeRange],
     queryFn: () =>
       tenant
-        ? apiClient.getTenantModelBreakdown(tenant.id, daysCount)
+        ? apiClient.getTenantModelBreakdown(tenant.id, dateRangeOptions)
         : Promise.resolve([]),
     enabled: !!tenant,
     refetchInterval: 60000, // Refetch every minute

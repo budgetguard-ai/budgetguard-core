@@ -14,6 +14,7 @@ import {
 import { useDashboardStore } from "../hooks/useStore";
 import { useTenants } from "../hooks/useApi";
 import { apiClient } from "../services/api";
+import { getDateRangeForRange } from "../utils/dateRange";
 import TagMetricsCards from "../components/charts/TagMetricsCards";
 import TagHierarchyTable from "../components/charts/TagHierarchyTable";
 import TagDrilldownChart from "../components/charts/TagDrilldownChart";
@@ -22,7 +23,9 @@ import type { TagAnalytics, TagUsageData } from "../types";
 
 const Tags: React.FC = () => {
   const { selectedTenant, setSelectedTenant } = useDashboardStore();
-  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
+  const [timeRange, setTimeRange] = useState<
+    "1w" | "lw" | "1m" | "lm" | "7d" | "30d" | "90d"
+  >("1m");
   const [isLoading, setIsLoading] = useState(false);
   const [analytics, setAnalytics] = useState<TagAnalytics | null>(null);
   const [totalTenantUsage, setTotalTenantUsage] = useState<number>(0);
@@ -70,12 +73,15 @@ const Tags: React.FC = () => {
       }
 
       try {
-        const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
+        const dateRangeOptions = getDateRangeForRange(timeRange);
 
         // Fetch both tag analytics and model breakdown to get complete usage data
         const [analytics, modelBreakdown] = await Promise.all([
-          apiClient.getTagUsageAnalytics(selectedTenant.id, { days }),
-          apiClient.getTenantModelBreakdown(selectedTenant.id, days),
+          apiClient.getTagUsageAnalytics(selectedTenant.id, dateRangeOptions),
+          apiClient.getTenantModelBreakdown(
+            selectedTenant.id,
+            dateRangeOptions,
+          ),
         ]);
 
         // Validate and transform the analytics data
@@ -215,9 +221,22 @@ const Tags: React.FC = () => {
               value={timeRange}
               label="Time Range"
               onChange={(e) =>
-                setTimeRange(e.target.value as "7d" | "30d" | "90d")
+                setTimeRange(
+                  e.target.value as
+                    | "1w"
+                    | "lw"
+                    | "1m"
+                    | "lm"
+                    | "7d"
+                    | "30d"
+                    | "90d",
+                )
               }
             >
+              <MenuItem value="1w">This week</MenuItem>
+              <MenuItem value="lw">Last week</MenuItem>
+              <MenuItem value="1m">This month</MenuItem>
+              <MenuItem value="lm">Last month</MenuItem>
               <MenuItem value="7d">Last 7 days</MenuItem>
               <MenuItem value="30d">Last 30 days</MenuItem>
               <MenuItem value="90d">Last 90 days</MenuItem>

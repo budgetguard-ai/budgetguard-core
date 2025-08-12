@@ -2328,6 +2328,8 @@ export async function buildServer() {
           type: "object",
           properties: {
             days: { type: "string", default: "30" },
+            startDate: { type: "string", format: "date" },
+            endDate: { type: "string", format: "date" },
           },
         },
         response: {
@@ -2356,18 +2358,45 @@ export async function buildServer() {
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
-      const { days = "30" } = req.query as { days?: string };
+      const {
+        days = "30",
+        startDate: startDateParam,
+        endDate: endDateParam,
+      } = req.query as {
+        days?: string;
+        startDate?: string;
+        endDate?: string;
+      };
 
       const id = Number(tenantId);
-      const daysCount = parseInt(days, 10);
 
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
-      // Calculate date range
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysCount);
+      // Calculate date range - use provided dates if available, otherwise use days
+      let startDate: Date;
+      let endDate: Date;
+
+      if (startDateParam && endDateParam) {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return reply.code(400).send({ error: "Invalid date format" });
+        }
+        if (startDate >= endDate) {
+          return reply
+            .code(400)
+            .send({ error: "startDate must be before endDate" });
+        }
+      } else {
+        // Fallback to days calculation
+        const daysCount = parseInt(days, 10);
+        endDate = new Date();
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - daysCount);
+      }
 
       // Query historical usage from UsageLedger
       const historicalUsage = await prisma.usageLedger.findMany({
@@ -2384,8 +2413,13 @@ export async function buildServer() {
       // Group by date and sum usage
       const dailyUsage = new Map<string, number>();
 
+      // Calculate the number of days in the range
+      const MS_PER_DAY = 1000 * 60 * 60 * 24;
+      const daysDiff =
+        Math.floor((endDate.getTime() - startDate.getTime()) / MS_PER_DAY) + 1;
+
       // Initialize all dates with 0
-      for (let i = 0; i < daysCount; i++) {
+      for (let i = 0; i < daysDiff; i++) {
         const date = new Date(startDate);
         date.setDate(date.getDate() + i);
         const dateKey = date.toISOString().split("T")[0];
@@ -2427,6 +2461,8 @@ export async function buildServer() {
           type: "object",
           properties: {
             days: { type: "string", default: "30" },
+            startDate: { type: "string", format: "date" },
+            endDate: { type: "string", format: "date" },
           },
         },
         response: {
@@ -2456,18 +2492,45 @@ export async function buildServer() {
     async (req, reply) => {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
-      const { days = "30" } = req.query as { days?: string };
+      const {
+        days = "30",
+        startDate: startDateParam,
+        endDate: endDateParam,
+      } = req.query as {
+        days?: string;
+        startDate?: string;
+        endDate?: string;
+      };
 
       const id = Number(tenantId);
-      const daysCount = parseInt(days, 10);
 
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
-      // Calculate date range
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysCount);
+      // Calculate date range - use provided dates if available, otherwise use days
+      let startDate: Date;
+      let endDate: Date;
+
+      if (startDateParam && endDateParam) {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return reply.code(400).send({ error: "Invalid date format" });
+        }
+        if (startDate >= endDate) {
+          return reply
+            .code(400)
+            .send({ error: "startDate must be before endDate" });
+        }
+      } else {
+        // Fallback to days calculation
+        const daysCount = parseInt(days, 10);
+        endDate = new Date();
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - daysCount);
+      }
 
       // Query usage by model from UsageLedger
       const modelUsage = await prisma.usageLedger.groupBy({
