@@ -128,7 +128,7 @@ const Tags: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tag Analytics
+          Tags
         </Typography>
         <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
           <CircularProgress />
@@ -146,7 +146,7 @@ const Tags: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tag Analytics
+          Tags
         </Typography>
         <Alert severity="info">
           No tenants found. Please create a tenant first in the Tenant
@@ -165,7 +165,7 @@ const Tags: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tag Analytics
+          Tags
         </Typography>
         <Alert severity="info">
           Please select a tenant to view tag analytics.
@@ -185,7 +185,7 @@ const Tags: React.FC = () => {
         }}
       >
         <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-          Tag Analytics
+          Tags
         </Typography>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>

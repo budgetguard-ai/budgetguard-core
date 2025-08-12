@@ -55,7 +55,7 @@ const headCells: HeadCell[] = [
   // Do not add any id here that does not exist on UsageLedger
 ];
 
-const UsageHistory: React.FC = () => {
+const UsageTracking: React.FC = () => {
   // Table state
   const [order, setOrder] = useState<Order>("desc");
   const [orderBy, setOrderBy] = useState<keyof UsageLedger>("ts");
@@ -244,7 +244,7 @@ const UsageHistory: React.FC = () => {
           }}
         >
           <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-            Usage History
+            Usage Tracking
           </Typography>
           <Box sx={{ display: "flex", gap: 2 }}>
             <Button
@@ -466,4 +466,4 @@ const UsageHistory: React.FC = () => {
   );
 };
 
-export default UsageHistory;
+export default UsageTracking;
