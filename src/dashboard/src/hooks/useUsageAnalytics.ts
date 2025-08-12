@@ -65,7 +65,6 @@ export const useUsageAnalytics = (
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-
   const dateRangeOptions = getDateRangeForRange(timeRange);
 
   const { data: historicalUsage = [], isLoading: historicalLoading } = useQuery(

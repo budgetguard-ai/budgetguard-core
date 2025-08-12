@@ -78,7 +78,10 @@ const Tags: React.FC = () => {
         // Fetch both tag analytics and model breakdown to get complete usage data
         const [analytics, modelBreakdown] = await Promise.all([
           apiClient.getTagUsageAnalytics(selectedTenant.id, dateRangeOptions),
-          apiClient.getTenantModelBreakdown(selectedTenant.id, dateRangeOptions),
+          apiClient.getTenantModelBreakdown(
+            selectedTenant.id,
+            dateRangeOptions,
+          ),
         ]);
 
         // Validate and transform the analytics data

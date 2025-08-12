@@ -2415,7 +2415,8 @@ export async function buildServer() {
 
       // Calculate the number of days in the range
       const MS_PER_DAY = 1000 * 60 * 60 * 24;
-      const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / MS_PER_DAY) + 1;
+      const daysDiff =
+        Math.floor((endDate.getTime() - startDate.getTime()) / MS_PER_DAY) + 1;
 
       // Initialize all dates with 0
       for (let i = 0; i < daysDiff; i++) {
