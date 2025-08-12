@@ -242,7 +242,7 @@ const Tenants: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tenant Management
+          Manage Tenants
         </Typography>
         <Grid container spacing={2} sx={{ width: "100%", margin: 0 }}>
           {Array.from({ length: 6 }).map((_, index) => (

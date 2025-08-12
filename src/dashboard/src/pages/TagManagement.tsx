@@ -180,7 +180,7 @@ const TagManagement: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tag Management
+          Manage Tags
         </Typography>
         <Alert severity="info">Loading tenants...</Alert>
       </Box>
@@ -196,7 +196,7 @@ const TagManagement: React.FC = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Tag Management
+          Manage Tags
         </Typography>
         <Alert severity="info">Please select a tenant to manage tags.</Alert>
       </Box>
@@ -215,7 +215,7 @@ const TagManagement: React.FC = () => {
         }}
       >
         <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-          Tag Management
+          Manage Tags
         </Typography>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>

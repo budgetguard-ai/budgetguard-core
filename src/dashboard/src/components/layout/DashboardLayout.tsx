@@ -18,7 +18,6 @@ import {
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
-  People as PeopleIcon,
   Settings as SettingsIcon,
   LightMode as LightModeIcon,
   DarkMode as DarkModeIcon,
@@ -26,6 +25,8 @@ import {
   SmartToy as ModelsIcon,
   Analytics as AnalyticsIcon,
   LocalOffer as TagIcon,
+  ManageAccounts as ManageAccountsIcon,
+  PlayCircle as SessionsIcon,
 } from "@mui/icons-material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDashboardStore } from "../../hooks/useStore";
@@ -37,20 +38,53 @@ interface NavigationItem {
   text: string;
   icon: React.ReactElement;
   path: string;
+  section?: string;
 }
 
 const navigationItems: NavigationItem[] = [
-  { text: "Dashboard", icon: <DashboardIcon />, path: "/usage" },
-  { text: "Tag Analytics", icon: <AnalyticsIcon />, path: "/tags" },
   {
-    text: "Tag Management",
-    icon: <TagIcon />,
-    path: "/tag-management",
+    text: "Dashboard",
+    icon: <DashboardIcon />,
+    path: "/",
+    section: "REPORTS & TRACKING",
   },
-  { text: "Tenants", icon: <PeopleIcon />, path: "/tenants" },
-  { text: "Usage History", icon: <HistoryIcon />, path: "/usage-history" },
-  { text: "Models", icon: <ModelsIcon />, path: "/models" },
-  { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
+  {
+    text: "Tags",
+    icon: <AnalyticsIcon />,
+    path: "/tags",
+    section: "REPORTS & TRACKING",
+  },
+  {
+    text: "Usage Tracking",
+    icon: <HistoryIcon />,
+    path: "/usage-tracking",
+    section: "REPORTS & TRACKING",
+  },
+  {
+    text: "Sessions",
+    icon: <SessionsIcon />,
+    path: "/sessions",
+    section: "REPORTS & TRACKING",
+  },
+  {
+    text: "Manage Tenants",
+    icon: <ManageAccountsIcon />,
+    path: "/admin/tenants",
+    section: "ADMIN",
+  },
+  {
+    text: "Manage Tags",
+    icon: <TagIcon />,
+    path: "/admin/tags",
+    section: "ADMIN",
+  },
+  { text: "Models", icon: <ModelsIcon />, path: "/models", section: "ADMIN" },
+  {
+    text: "Settings",
+    icon: <SettingsIcon />,
+    path: "/settings",
+    section: "ADMIN",
+  },
 ];
 
 interface DashboardLayoutProps {
@@ -106,47 +140,80 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       </Toolbar>
       <Divider />
       <List>
-        {navigationItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => handleNavigation(item.path)}
-              sx={{
-                borderRadius: 2,
-                mx: 1,
-                my: 0.25,
-                "&.Mui-selected": {
-                  backgroundColor: theme.palette.primary.main,
-                  color: theme.palette.primary.contrastText,
-                  "&:hover": {
-                    backgroundColor: theme.palette.primary.dark,
-                  },
-                  "& .MuiListItemIcon-root": {
-                    color: theme.palette.primary.contrastText,
-                  },
-                },
-              }}
-            >
-              <ListItemIcon
-                sx={{
-                  color:
-                    location.pathname === item.path
-                      ? theme.palette.primary.contrastText
-                      : theme.palette.text.secondary,
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.text}
-                primaryTypographyProps={{
-                  fontWeight: location.pathname === item.path ? 600 : 400,
-                  fontSize: "0.875rem",
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
+        {(() => {
+          const groupedItems = navigationItems.reduce(
+            (acc, item) => {
+              const section = item.section || "OTHER";
+              if (!acc[section]) acc[section] = [];
+              acc[section].push(item);
+              return acc;
+            },
+            {} as Record<string, NavigationItem[]>,
+          );
+
+          return Object.entries(groupedItems).map(
+            ([sectionName, items], sectionIndex) => (
+              <React.Fragment key={sectionName}>
+                {sectionIndex > 0 && <Divider sx={{ my: 1 }} />}
+                <Box sx={{ px: 2, py: 1 }}>
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: theme.palette.text.secondary,
+                      letterSpacing: 1.2,
+                    }}
+                  >
+                    {sectionName}
+                  </Typography>
+                </Box>
+                {items.map((item) => (
+                  <ListItem key={item.text} disablePadding>
+                    <ListItemButton
+                      selected={location.pathname === item.path}
+                      onClick={() => handleNavigation(item.path)}
+                      sx={{
+                        borderRadius: 2,
+                        mx: 1,
+                        my: 0.25,
+                        "&.Mui-selected": {
+                          backgroundColor: theme.palette.primary.main,
+                          color: theme.palette.primary.contrastText,
+                          "&:hover": {
+                            backgroundColor: theme.palette.primary.dark,
+                          },
+                          "& .MuiListItemIcon-root": {
+                            color: theme.palette.primary.contrastText,
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemIcon
+                        sx={{
+                          color:
+                            location.pathname === item.path
+                              ? theme.palette.primary.contrastText
+                              : theme.palette.text.secondary,
+                        }}
+                      >
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={item.text}
+                        primaryTypographyProps={{
+                          fontWeight:
+                            location.pathname === item.path ? 600 : 400,
+                          fontSize: "0.875rem",
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </React.Fragment>
+            ),
+          );
+        })()}
       </List>
       <Divider sx={{ mt: "auto" }} />
       <Box sx={{ p: 2, display: "flex", justifyContent: "center", gap: 1 }}>
