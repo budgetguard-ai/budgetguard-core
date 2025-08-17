@@ -62,9 +62,12 @@ const BudgetStatusCard: React.FC<BudgetStatusCardProps> = ({
     if (days <= 0) return "Period ended";
     if (days === 1) return "1 day left";
     if (days < 7) return `${days} days left`;
-    if (days < 30)
-      return `${Math.round(days / 7)} week${Math.round(days / 7) === 1 ? "" : "s"} left`;
-    return `${Math.round(days / 30)} month${Math.round(days / 30) === 1 ? "" : "s"} left`;
+    if (days < 30) {
+      const weeks = Math.round(days / 7);
+      return `${weeks} week${weeks === 1 ? "" : "s"} left`;
+    }
+    const months = Math.round(days / 30);
+    return `${months} month${months === 1 ? "" : "s"} left`;
   };
 
   return (
