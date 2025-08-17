@@ -17,16 +17,16 @@ import {
 } from "@mui/material";
 import {
   Menu as MenuIcon,
-  Dashboard as DashboardIcon,
   Settings as SettingsIcon,
   LightMode as LightModeIcon,
   DarkMode as DarkModeIcon,
   History as HistoryIcon,
   SmartToy as ModelsIcon,
-  Analytics as AnalyticsIcon,
   LocalOffer as TagIcon,
   ManageAccounts as ManageAccountsIcon,
   PlayCircle as SessionsIcon,
+  AccountBalanceWallet as BudgetIcon,
+  TrendingUp as InsightsIcon,
 } from "@mui/icons-material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDashboardStore } from "../../hooks/useStore";
@@ -43,28 +43,28 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   {
-    text: "Dashboard",
-    icon: <DashboardIcon />,
+    text: "Budget Health",
+    icon: <BudgetIcon />,
     path: "/",
-    section: "REPORTS & TRACKING",
+    section: "OVERVIEW",
   },
   {
-    text: "Tags",
-    icon: <AnalyticsIcon />,
-    path: "/tags",
-    section: "REPORTS & TRACKING",
+    text: "Usage Insights",
+    icon: <InsightsIcon />,
+    path: "/usage-insights",
+    section: "OVERVIEW",
   },
   {
     text: "Usage Tracking",
     icon: <HistoryIcon />,
     path: "/usage-tracking",
-    section: "REPORTS & TRACKING",
+    section: "MONITORING",
   },
   {
     text: "Sessions",
     icon: <SessionsIcon />,
     path: "/sessions",
-    section: "REPORTS & TRACKING",
+    section: "MONITORING",
   },
   {
     text: "Manage Tenants",
