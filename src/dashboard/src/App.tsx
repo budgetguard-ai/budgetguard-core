@@ -2,15 +2,14 @@ import { FC } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { Box } from "@mui/material";
 import DashboardLayout from "./components/layout/DashboardLayout";
-import Overview from "./pages/Overview";
 import Tenants from "./pages/Tenants";
-import Usage from "./pages/Usage";
 import UsageTracking from "./pages/UsageTracking";
 import Sessions from "./pages/Sessions";
 import Models from "./pages/Models";
 import Settings from "./pages/Settings";
-import Tags from "./pages/Tags";
 import TagManagement from "./pages/TagManagement";
+import BudgetHealth from "./pages/BudgetHealth";
+import UsageInsights from "./pages/UsageInsights";
 
 const App: FC = () => {
   return (
@@ -18,9 +17,8 @@ const App: FC = () => {
       <Box sx={{ display: "flex", minHeight: "100vh" }}>
         <DashboardLayout>
           <Routes>
-            <Route path="/" element={<Usage />} />
-            <Route path="/overview" element={<Overview />} />
-            <Route path="/tags" element={<Tags />} />
+            <Route path="/" element={<BudgetHealth />} />
+            <Route path="/usage-insights" element={<UsageInsights />} />
             <Route path="/usage-tracking" element={<UsageTracking />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/admin/tenants" element={<Tenants />} />
