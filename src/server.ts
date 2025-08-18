@@ -40,6 +40,12 @@ import {
 } from "./auth-utils.js";
 import { checkTagBudgets, checkHierarchicalTagBudgets } from "./tag-budget.js";
 import { validateAndCacheTagSet, invalidateTagCache } from "./tag-cache.js";
+import {
+  extractSessionHeaders,
+  getOrCreateSession,
+  markSessionBudgetExceeded,
+  incrementSessionCost,
+} from "./session-utils.js";
 
 // TypeScript interfaces for type safety
 interface ValidatedTag {
@@ -652,6 +658,20 @@ export async function buildServer() {
       const key = ledgerKey(period, now, { startDate, endDate });
       await redisClient.incrByFloat(`ledger:${tenant}:${key}`, usd);
     }
+
+    // Session cost tracking
+    const sess = (req as any)._sessionData as
+      | { sessionId: string; effectiveBudgetUsd: number | null }
+      | undefined;
+    if (sess && sess.sessionId && usd > 0) {
+      try {
+        await incrementSessionCost(sess.sessionId, usd, await getPrisma());
+      } catch (e) {
+        // log, but do not fail response
+        console.warn("Failed to increment session cost:", e);
+      }
+    }
+
     return payload;
   });
 
@@ -969,6 +989,28 @@ export async function buildServer() {
         });
       }
 
+      // === Session handling (Option A: historical usage only) ===
+      const sessionHeaders = extractSessionHeaders(req.headers);
+      const tagIds = validatedTags.map(t => t.id);
+      let sessionData = await getOrCreateSession(
+        sessionHeaders,
+        tenantId,
+        tagIds,
+        prisma,
+      );
+
+      // Option A: Enforce only if existing usage already >= budget
+      if (
+        sessionData &&
+        sessionData.effectiveBudgetUsd != null &&
+        sessionData.currentCostUsd >= sessionData.effectiveBudgetUsd
+      ) {
+        await markSessionBudgetExceeded(sessionData.sessionId, prisma);
+        return reply.code(402).send({ error: "Session budget exceeded" });
+      }
+      // Store for onSend
+      (req as any)._sessionData = sessionData;
+
       // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
       const { budgets } = await readBudgetsOptimized(
         tenant,
@@ -1246,6 +1288,28 @@ export async function buildServer() {
         });
       }
 
+      // === Session handling (Option A: historical usage only) ===
+      const sessionHeaders = extractSessionHeaders(req.headers);
+      const tagIds = validatedTags.map(t => t.id);
+      let sessionData = await getOrCreateSession(
+        sessionHeaders,
+        tenantId,
+        tagIds,
+        prisma,
+      );
+
+      // Option A: Enforce only if existing usage already >= budget
+      if (
+        sessionData &&
+        sessionData.effectiveBudgetUsd != null &&
+        sessionData.currentCostUsd >= sessionData.effectiveBudgetUsd
+      ) {
+        await markSessionBudgetExceeded(sessionData.sessionId, prisma);
+        return reply.code(402).send({ error: "Session budget exceeded" });
+      }
+      // Store for onSend
+      (req as any)._sessionData = sessionData;
+
       // Use ULTRA-optimized batching for ALL Redis calls (budgets + tenant + rate limit + usage)
       const { budgets } = await readBudgetsOptimized(
         tenant,
@@ -1410,7 +1474,10 @@ export async function buildServer() {
           "Create a new tenant with optional budget and rate limit configuration",
         body: {
           type: "object",
-          properties: { name: { type: "string" } },
+          properties: { 
+            name: { type: "string" },
+            defaultSessionBudgetUsd: { type: "string" }
+          },
           required: ["name"],
         },
         response: {
@@ -1435,7 +1502,7 @@ export async function buildServer() {
     },
     async (req, reply) => {
       const prisma = await getPrisma();
-      const { name } = req.body as { name?: string };
+      const { name, defaultSessionBudgetUsd } = req.body as { name?: string; defaultSessionBudgetUsd?: string };
       if (!name) {
         return reply.code(400).send({ error: "Missing name" });
       }
@@ -1444,6 +1511,7 @@ export async function buildServer() {
           data: {
             name,
             rateLimitPerMin: Number(process.env.MAX_REQS_PER_MIN || 100),
+            defaultSessionBudgetUsd: defaultSessionBudgetUsd ? new Prisma.Decimal(defaultSessionBudgetUsd) : null,
           },
         });
         return reply.send(tenant);
@@ -3602,6 +3670,7 @@ export async function buildServer() {
             parentId: { type: "number" },
             color: { type: "string" },
             metadata: { type: "object" },
+            sessionBudgetUsd: { type: "string" },
           },
           required: ["name"],
         },
@@ -3614,12 +3683,13 @@ export async function buildServer() {
       const prisma = await getPrisma();
       const { tenantId } = req.params as { tenantId: string };
       const id = Number(tenantId);
-      const { name, description, parentId, color, metadata } = req.body as {
+      const { name, description, parentId, color, metadata, sessionBudgetUsd } = req.body as {
         name: string;
         description?: string;
         parentId?: number;
         color?: string;
         metadata?: Record<string, unknown>;
+        sessionBudgetUsd?: string;
       };
 
       try {
@@ -3664,6 +3734,7 @@ export async function buildServer() {
             level,
             color,
             metadata: metadata as Prisma.InputJsonValue,
+            sessionBudgetUsd: sessionBudgetUsd ? new Prisma.Decimal(sessionBudgetUsd) : null,
           },
           include: {
             parent: true,

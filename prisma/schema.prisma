@@ -25,19 +25,21 @@ model UsageLedger {
 }
 
 model Tenant {
-  id              Int            @id @default(autoincrement())
-  name            String         @unique
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  rateLimitPerMin Int?
-  alerts          Alert[]
-  apiKeys         ApiKey[]
-  audits          AuditLog[]
-  budgets         Budget[]
-  policies        PolicyBundle[]
-  ledger          UsageLedger[]
-  tags            Tag[]
-  taggingRules    TaggingRule[]
+  id                       Int            @id @default(autoincrement())
+  name                     String         @unique
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  rateLimitPerMin          Int?
+  defaultSessionBudgetUsd  Decimal?       @db.Decimal(12,6)
+  alerts                   Alert[]
+  apiKeys                  ApiKey[]
+  audits                   AuditLog[]
+  budgets                  Budget[]
+  policies                 PolicyBundle[]
+  ledger                   UsageLedger[]
+  tags                     Tag[]
+  taggingRules             TaggingRule[]
+  sessions                 Session[]
 }
 
 model ApiKey {
@@ -116,24 +118,26 @@ model ModelPricing {
 }
 
 model Tag {
-  id          Int      @id @default(autoincrement())
-  tenantId    Int
-  name        String
-  description String?
-  parentId    Int?
-  path        String?  // "engineering/frontend" - for faster hierarchical queries
-  level       Int      @default(0)  // hierarchy depth for query optimization
-  isActive    Boolean  @default(true)  // soft delete capability
-  color       String?  // UI display color
-  metadata    Json?    // extensible properties for future features
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  tenantId         Int
+  name             String
+  description      String?
+  parentId         Int?
+  path             String?  // "engineering/frontend" - for faster hierarchical queries
+  level            Int      @default(0)  // hierarchy depth for query optimization
+  isActive         Boolean  @default(true)  // soft delete capability
+  color            String?  // UI display color
+  metadata         Json?    // extensible properties for future features
+  sessionBudgetUsd Decimal? @db.Decimal(12,6)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
   
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  parent      Tag?        @relation("TagHierarchy", fields: [parentId], references: [id])  
-  children    Tag[]       @relation("TagHierarchy")
-  budgets     TagBudget[]
-  usage       RequestTag[]
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  parent           Tag?        @relation("TagHierarchy", fields: [parentId], references: [id])  
+  children         Tag[]       @relation("TagHierarchy")
+  budgets          TagBudget[]
+  usage            RequestTag[]
+  sessions         Session[]   @relation("SessionTags")
   
   @@unique([tenantId, name])
   @@unique([tenantId, path])  // Ensure unique paths within tenant
@@ -191,4 +195,23 @@ model TaggingRule {
   
   @@unique([tenantId, name])
   @@index([tenantId, isActive])
+}
+
+model Session {
+  sessionId          String    @id
+  tenantId           Int
+  name               String?
+  path               String?
+  effectiveBudgetUsd Decimal?  @db.Decimal(12,6)
+  currentCostUsd     Decimal   @default(0) @db.Decimal(18,8)
+  status             String    @default("active")
+  metadata           Json?
+  lastActiveAt       DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+  tags               Tag[]     @relation("SessionTags")
+  
+  @@index([tenantId])
+  @@index([sessionId])
 }
