@@ -54,7 +54,7 @@ interface SessionData {
 }
 
 interface RequestWithSessionData extends FastifyRequest {
-  _sessionData?: SessionData;
+  _sessionData?: SessionData | null;
 }
 interface ValidatedTag {
   id: number;
