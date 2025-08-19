@@ -284,11 +284,14 @@ export async function getOrCreateSession(
     // Recompute effective budget each fetch (in case admin/tag changed)
     if (
       effective !== null &&
-      effective !== existing.effectiveBudgetUsd?.toNumber?.()
+      effective !== existing.effectiveBudgetUsd?.toNumber()
     ) {
       await prisma.session.update({
         where: { sessionId: existing.sessionId },
-        data: { effectiveBudgetUsd: effective },
+        data: {
+          effectiveBudgetUsd:
+            effective !== null ? new Prisma.Decimal(effective) : null,
+        },
       });
     }
 
@@ -296,9 +299,10 @@ export async function getOrCreateSession(
       sessionId: existing.sessionId,
       tenantId: existing.tenantId,
       effectiveBudgetUsd: effective,
-      currentCostUsd: existing.currentCostUsd.toNumber
-        ? existing.currentCostUsd.toNumber()
-        : Number(existing.currentCostUsd),
+      currentCostUsd:
+        typeof existing.currentCostUsd.toNumber === "function"
+          ? existing.currentCostUsd.toNumber()
+          : Number(existing.currentCostUsd),
       status: existing.status,
       name: existing.name || undefined,
       path: existing.path || undefined,

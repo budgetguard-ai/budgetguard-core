@@ -1004,7 +1004,7 @@ export async function buildServer() {
         });
       }
 
-      // === Session handling (Option A: historical usage only) ===
+      // === Session handling: enforce budget only if historical usage already meets or exceeds budget ===
       const sessionHeaders = extractSessionHeaders(req.headers);
       const tagIds = validatedTags.map((t) => t.id);
       const sessionData = await getOrCreateSession(
@@ -1015,7 +1015,7 @@ export async function buildServer() {
         redisClient,
       );
 
-      // Option A: Enforce only if existing usage already >= budget
+      // Block requests only when accumulated session costs already meet or exceed the budget
       if (
         sessionData &&
         sessionData.effectiveBudgetUsd != null &&
