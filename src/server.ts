@@ -38,7 +38,11 @@ import {
   cleanupApiKeyCache,
   deactivateApiKeyInCache,
 } from "./auth-utils.js";
-import { checkTagBudgets, checkHierarchicalTagBudgets } from "./tag-budget.js";
+import {
+  checkTagBudgets,
+  checkHierarchicalTagBudgets,
+  invalidateTagBudgetCache,
+} from "./tag-budget.js";
 import { validateAndCacheTagSet, invalidateTagCache } from "./tag-cache.js";
 import {
   extractSessionHeaders,
@@ -4400,6 +4404,9 @@ export async function buildServer() {
           },
         });
 
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(tagIdNum, redisClient);
+
         return reply.send(tagBudget);
       } catch (error) {
         console.error("Error creating tag budget:", error);
@@ -4578,6 +4585,9 @@ export async function buildServer() {
           },
         });
 
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(updatedBudget.tagId, redisClient);
+
         return reply.send(updatedBudget);
       } catch (error) {
         console.error("Error updating tag budget:", error);
@@ -4623,6 +4633,9 @@ export async function buildServer() {
         await prisma.tagBudget.delete({
           where: { id: budgetIdNum },
         });
+
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(budget.tagId, redisClient);
 
         return reply.send({ success: true });
       } catch (error) {
