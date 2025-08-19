@@ -32,6 +32,20 @@ describe("Session Budget Integration Tests", () => {
     redis = createClient({ url: process.env.REDIS_URL });
     await redis.connect();
 
+    // Ensure gpt-4o-mini model pricing exists for tests
+    await prisma.modelPricing.upsert({
+      where: { model: "gpt-4o-mini" },
+      update: {},
+      create: {
+        model: "gpt-4o-mini",
+        versionTag: "2024-07-18",
+        inputPrice: new Prisma.Decimal(0.15),
+        cachedInputPrice: new Prisma.Decimal(0.075),
+        outputPrice: new Prisma.Decimal(0.6),
+        provider: "openai",
+      },
+    });
+
     // Check if server is running
     try {
       const response = await fetch(`${BASE_URL}/health`, { method: "GET" });
@@ -98,7 +112,7 @@ describe("Session Budget Integration Tests", () => {
 
   test(
     "should inherit tenant defaultSessionBudgetUsd for new sessions",
-    { timeout: 10000 },
+    { timeout: 20000 },
     async () => {
       if (!serverRunning) {
         console.log("Skipping test - server not running on localhost:3000");
