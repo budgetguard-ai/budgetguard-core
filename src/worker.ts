@@ -1,8 +1,13 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import { incrementTagUsage } from "./tag-cache.js";
+import { createTagUsageTracker } from "./tag-usage-tracking.js";
 import dotenv from "dotenv";
 dotenv.config();
+
+// Cache TTL constants for tag usage tracking
+const LEGACY_DAILY_TAG_USAGE_TTL_SECONDS = 5 * 60; // Reduced TTL since Redis-based tracking is primary
+const LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS = 10 * 60; // Reduced TTL since Redis-based tracking is primary
 
 async function main() {
   const prisma = new PrismaClient();
@@ -60,6 +65,8 @@ async function main() {
 
           // Create RequestTag entries for each tag and update usage cache
           const usdValue = parseFloat(data.usd); // Parse once outside the loop
+          const tracker = createTagUsageTracker(redis, prisma);
+
           for (const tag of tags) {
             await prisma.requestTag.create({
               data: {
@@ -70,29 +77,50 @@ async function main() {
               },
             });
 
-            // Increment tag usage cache for both daily and monthly periods
+            // Use new Redis-based tag usage tracking
+            try {
+              await tracker.recordTagUsage({
+                tenantId: tenantRecord.id,
+                tenant: data.tenant,
+                tagId: tag.id,
+                tagName: tag.name,
+                usdAmount: usdValue,
+                weight: tag.weight,
+                timestamp: new Date(Number(data.ts)),
+                usageLedgerId: Number(usageLedgerEntry.id),
+                sessionId: data.sessionId, // if available in event data
+                model: data.model || "unknown",
+                route: data.route,
+              });
+            } catch (error) {
+              console.warn(
+                `Failed to record Redis tag usage for tag ${tag.id}:`,
+                error,
+              );
+              // Continue with legacy cache update as fallback
+            }
+
+            // Keep legacy cache increment as fallback (shorter TTL for gradual migration)
             const weightedUsage = usdValue * tag.weight;
             const tenantName = data.tenant;
 
-            // Increment daily usage (shorter TTL for more frequent updates)
             await incrementTagUsage(
               tenantName,
               tag.id,
               "daily",
               weightedUsage,
               redis,
-              15 * 60,
-            ); // 15 min TTL
+              LEGACY_DAILY_TAG_USAGE_TTL_SECONDS,
+            );
 
-            // Increment monthly usage (longer TTL)
             await incrementTagUsage(
               tenantName,
               tag.id,
               "monthly",
               weightedUsage,
               redis,
-              30 * 60,
-            ); // 30 min TTL
+              LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS,
+            );
           }
         } catch (error) {
           console.error("Error processing tags for usage entry:", error);

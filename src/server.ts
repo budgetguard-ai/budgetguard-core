@@ -38,7 +38,12 @@ import {
   cleanupApiKeyCache,
   deactivateApiKeyInCache,
 } from "./auth-utils.js";
-import { checkTagBudgets, checkHierarchicalTagBudgets } from "./tag-budget.js";
+import {
+  checkTagBudgets,
+  checkHierarchicalTagBudgets,
+  invalidateTagBudgetCache,
+} from "./tag-budget.js";
+import { createTagUsageTracker } from "./tag-usage-tracking.js";
 import { validateAndCacheTagSet, invalidateTagCache } from "./tag-cache.js";
 import {
   extractSessionHeaders,
@@ -46,6 +51,45 @@ import {
   markSessionBudgetExceeded,
   incrementSessionCost,
 } from "./session-utils.js";
+
+// Utility function to parse date range parameters with proper end-of-day handling
+interface DateRangeParams {
+  startDate: Date;
+  endDate: Date;
+}
+
+function parseDateRange(
+  startDateParam?: string,
+  endDateParam?: string,
+  daysParam?: string,
+): DateRangeParams {
+  if (startDateParam && endDateParam) {
+    const startDate = new Date(startDateParam);
+    const endDate = new Date(endDateParam);
+
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new Error("Invalid date format");
+    }
+
+    // Set end date to end-of-day to include the entire day
+    endDate.setHours(23, 59, 59, 999);
+
+    if (startDate >= endDate) {
+      throw new Error("startDate must be before endDate");
+    }
+
+    return { startDate, endDate };
+  } else {
+    // Fallback to days calculation
+    const daysCount = parseInt(daysParam || "30", 10);
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysCount);
+
+    return { startDate, endDate };
+  }
+}
 
 // TypeScript interfaces for type safety
 interface SessionData {
@@ -684,6 +728,44 @@ export async function buildServer() {
       } catch (e) {
         // log, but do not fail response
         console.warn("Failed to increment session cost:", e);
+      }
+    }
+
+    // Redis-based tag usage tracking
+    if (validatedTags.length > 0 && usd > 0) {
+      try {
+        const tracker = createTagUsageTracker(redisClient, await getPrisma());
+        const now = new Date();
+
+        // Get tenant record for tenantId
+        const tenantRecord = await prismaClient.tenant.findUnique({
+          where: { name: tenant },
+        });
+
+        if (!tenantRecord) {
+          console.warn(`Tenant not found for tag usage tracking: ${tenant}`);
+          return payload; // Skip tag tracking for this request instead of failing
+        }
+
+        const tenantId = tenantRecord.id;
+
+        for (const tag of validatedTags) {
+          await tracker.recordTagUsage({
+            tenantId,
+            tenant,
+            tagId: tag.id,
+            tagName: tag.name,
+            usdAmount: usd,
+            weight: tag.weight,
+            timestamp: now,
+            sessionId: sess?.sessionId,
+            model,
+            route: req.routeOptions.url ?? req.url,
+          });
+        }
+      } catch (e) {
+        // log, but do not fail response
+        console.warn("Failed to record tag usage:", e);
       }
     }
 
@@ -1497,6 +1579,7 @@ export async function buildServer() {
         summary: "Create a new tenant",
         description:
           "Create a new tenant with optional budget and rate limit configuration",
+        security: [{ AdminApiKey: [] }],
         body: {
           type: "object",
           properties: {
@@ -1565,6 +1648,7 @@ export async function buildServer() {
         tags: ["Tenant Management"],
         summary: "List all tenants",
         description: "Retrieve a list of all tenants in the system",
+        security: [{ AdminApiKey: [] }],
         response: {
           200: {
             type: "array",
@@ -1613,6 +1697,7 @@ export async function buildServer() {
         tags: ["Tenant Management"],
         summary: "Get tenant by ID",
         description: "Retrieve detailed information about a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1658,6 +1743,7 @@ export async function buildServer() {
         tags: ["Tenant Management"],
         summary: "Update tenant",
         description: "Update tenant information such as name or rate limits",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1763,6 +1849,7 @@ export async function buildServer() {
         tags: ["Tenant Management"],
         summary: "Delete tenant",
         description: "Delete a tenant and all associated data",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1855,6 +1942,7 @@ export async function buildServer() {
         summary: "Get tenant rate limit",
         description:
           "Retrieve the current rate limit configuration for a tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1896,6 +1984,7 @@ export async function buildServer() {
         summary: "Set tenant rate limit",
         description:
           "Configure the rate limit for a specific tenant (requests per minute)",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -1973,6 +2062,7 @@ export async function buildServer() {
         tags: ["Budget Management"],
         summary: "Set tenant budget",
         description: "Configure budget limits for a specific tenant and period",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2120,6 +2210,7 @@ export async function buildServer() {
         tags: ["Budget Management"],
         summary: "Get tenant budgets",
         description: "Retrieve all budget configurations for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2217,6 +2308,7 @@ export async function buildServer() {
         tags: ["API Key Management"],
         summary: "Generate tenant API key",
         description: "Generate a new API key for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2274,6 +2366,7 @@ export async function buildServer() {
         tags: ["API Key Management"],
         summary: "List tenant API keys",
         description: "Retrieve all API keys for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2328,6 +2421,7 @@ export async function buildServer() {
         tags: ["API Key Management"],
         summary: "Delete API key",
         description: "Delete a specific API key by ID",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { id: { type: "string" } },
@@ -2373,6 +2467,7 @@ export async function buildServer() {
         summary: "Get tenant usage summary",
         description:
           "Retrieve usage summary and statistics for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2428,6 +2523,7 @@ export async function buildServer() {
         summary: "Get tenant usage history",
         description:
           "Retrieve historical usage data for a specific tenant with optional date filtering",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2482,29 +2578,18 @@ export async function buildServer() {
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
-      // Calculate date range - use provided dates if available, otherwise use days
+      // Calculate date range using utility function
       let startDate: Date;
       let endDate: Date;
 
-      if (startDateParam && endDateParam) {
-        startDate = new Date(startDateParam);
-        endDate = new Date(endDateParam);
-
-        // Validate dates
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-          return reply.code(400).send({ error: "Invalid date format" });
-        }
-        if (startDate >= endDate) {
-          return reply
-            .code(400)
-            .send({ error: "startDate must be before endDate" });
-        }
-      } else {
-        // Fallback to days calculation
-        const daysCount = parseInt(days, 10);
-        endDate = new Date();
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - daysCount);
+      try {
+        ({ startDate, endDate } = parseDateRange(
+          startDateParam,
+          endDateParam,
+          days,
+        ));
+      } catch (error) {
+        return reply.code(400).send({ error: (error as Error).message });
       }
 
       // Query historical usage from UsageLedger
@@ -2561,6 +2646,7 @@ export async function buildServer() {
         tags: ["Usage Analytics"],
         summary: "Get tenant model usage breakdown",
         description: "Detailed usage statistics by model for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2616,29 +2702,18 @@ export async function buildServer() {
       const tenant = await prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ error: "Tenant not found" });
 
-      // Calculate date range - use provided dates if available, otherwise use days
+      // Calculate date range using utility function
       let startDate: Date;
       let endDate: Date;
 
-      if (startDateParam && endDateParam) {
-        startDate = new Date(startDateParam);
-        endDate = new Date(endDateParam);
-
-        // Validate dates
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-          return reply.code(400).send({ error: "Invalid date format" });
-        }
-        if (startDate >= endDate) {
-          return reply
-            .code(400)
-            .send({ error: "startDate must be before endDate" });
-        }
-      } else {
-        // Fallback to days calculation
-        const daysCount = parseInt(days, 10);
-        endDate = new Date();
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - daysCount);
+      try {
+        ({ startDate, endDate } = parseDateRange(
+          startDateParam,
+          endDateParam,
+          days,
+        ));
+      } catch (error) {
+        return reply.code(400).send({ error: (error as Error).message });
       }
 
       // Query usage by model from UsageLedger
@@ -2690,6 +2765,7 @@ export async function buildServer() {
         tags: ["Usage Analytics"],
         summary: "Get tenant usage ledger",
         description: "Detailed usage ledger entries for a specific tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -2861,6 +2937,7 @@ export async function buildServer() {
         tags: ["Usage Analytics"],
         summary: "Get usage ledger entries",
         description: "Retrieve usage ledger entries across all tenants",
+        security: [{ AdminApiKey: [] }],
         querystring: {
           type: "object",
           properties: {
@@ -3036,6 +3113,7 @@ export async function buildServer() {
         tags: ["Budget Management"],
         summary: "Update budget",
         description: "Update an existing budget by ID",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -3120,6 +3198,7 @@ export async function buildServer() {
         tags: ["Budget Management"],
         summary: "Delete budget",
         description: "Delete a budget by ID",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -3170,6 +3249,7 @@ export async function buildServer() {
         summary: "List model pricing",
         description:
           "Retrieve pricing information for all configured AI models",
+        security: [{ AdminApiKey: [] }],
         response: {
           200: {
             type: "array",
@@ -3215,6 +3295,7 @@ export async function buildServer() {
         tags: ["Model Pricing"],
         summary: "Add model pricing",
         description: "Add pricing configuration for a new AI model",
+        security: [{ AdminApiKey: [] }],
         body: {
           type: "object",
           properties: {
@@ -3293,6 +3374,7 @@ export async function buildServer() {
         tags: ["Model Pricing"],
         summary: "Update model pricing",
         description: "Update pricing for a specific model",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { idOrModel: { type: "string" } },
@@ -3356,6 +3438,7 @@ export async function buildServer() {
         tags: ["Provider Management"],
         summary: "Get all providers status",
         description: "Health status of all AI providers",
+        security: [{ AdminApiKey: [] }],
         response: {
           200: {
             type: "object",
@@ -3495,6 +3578,7 @@ export async function buildServer() {
         tags: ["Provider Management"],
         summary: "Get provider health",
         description: "Health check for a specific AI provider",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -3595,6 +3679,7 @@ export async function buildServer() {
         tags: ["Provider Management"],
         summary: "Test provider with API key",
         description: "Test a specific AI provider with provided API key",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -3698,6 +3783,7 @@ export async function buildServer() {
         tags: ["Tag Management"],
         summary: "Create tag",
         description: "Create a new tag for a tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -3806,6 +3892,7 @@ export async function buildServer() {
         tags: ["Tag Management"],
         summary: "List tags",
         description: "Get all tags for a tenant",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -3877,6 +3964,7 @@ export async function buildServer() {
         tags: ["Tag Management"],
         summary: "Get tag",
         description: "Get a specific tag by ID",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -3938,6 +4026,7 @@ export async function buildServer() {
         tags: ["Tag Management"],
         summary: "Update tag",
         description: "Update a tag's properties",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4060,6 +4149,7 @@ export async function buildServer() {
         summary: "Delete tag",
         description:
           "Permanently delete a tag and all associated data (budgets, usage records)",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4152,6 +4242,7 @@ export async function buildServer() {
         summary: "Deactivate tag",
         description:
           "Soft delete a tag (sets isActive to false) without removing data",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4220,6 +4311,7 @@ export async function buildServer() {
         summary: "Activate tag",
         description:
           "Reactivate a previously deactivated tag (sets isActive to true)",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4278,6 +4370,7 @@ export async function buildServer() {
         tags: ["Tag Budget Management"],
         summary: "Create tag budget",
         description: "Create a budget for a specific tag",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4400,6 +4493,9 @@ export async function buildServer() {
           },
         });
 
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(tagIdNum, redisClient);
+
         return reply.send(tagBudget);
       } catch (error) {
         console.error("Error creating tag budget:", error);
@@ -4416,6 +4512,7 @@ export async function buildServer() {
         tags: ["Tag Budget Management"],
         summary: "Get tag budgets",
         description: "Get all budgets for a specific tag",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: {
@@ -4478,6 +4575,7 @@ export async function buildServer() {
         tags: ["Tag Budget Management"],
         summary: "Update tag budget",
         description: "Update a tag budget",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -4578,6 +4676,9 @@ export async function buildServer() {
           },
         });
 
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(updatedBudget.tagId, redisClient);
+
         return reply.send(updatedBudget);
       } catch (error) {
         console.error("Error updating tag budget:", error);
@@ -4594,6 +4695,7 @@ export async function buildServer() {
         tags: ["Tag Budget Management"],
         summary: "Delete tag budget",
         description: "Delete a tag budget",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { budgetId: { type: "string" } },
@@ -4624,6 +4726,9 @@ export async function buildServer() {
           where: { id: budgetIdNum },
         });
 
+        // Invalidate tag budget cache
+        await invalidateTagBudgetCache(budget.tagId, redisClient);
+
         return reply.send({ success: true });
       } catch (error) {
         console.error("Error deleting tag budget:", error);
@@ -4642,6 +4747,7 @@ export async function buildServer() {
         summary: "Get tag usage analytics for a tenant",
         description:
           "Retrieve comprehensive tag usage analytics including usage data, budget health, trends, and hierarchy",
+        security: [{ AdminApiKey: [] }],
         params: {
           type: "object",
           properties: { tenantId: { type: "string" } },
@@ -4743,11 +4849,19 @@ export async function buildServer() {
           return reply.code(404).send({ error: "Tenant not found" });
         }
 
-        // Calculate date range
-        const endDateTime = endDate ? new Date(endDate) : new Date();
-        const startDateTime = startDate
-          ? new Date(startDate)
-          : new Date(endDateTime.getTime() - days * 24 * 60 * 60 * 1000);
+        // Calculate date range using utility function
+        let startDateTime: Date;
+        let endDateTime: Date;
+
+        try {
+          ({ startDate: startDateTime, endDate: endDateTime } = parseDateRange(
+            startDate,
+            endDate,
+            days?.toString(),
+          ));
+        } catch (error) {
+          return reply.code(400).send({ error: (error as Error).message });
+        }
 
         // Get all tags for the tenant
         const tags = await prisma.tag.findMany({
