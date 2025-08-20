@@ -1,0 +1,550 @@
+import { createClient } from "redis";
+import { PrismaClient } from "@prisma/client";
+
+// TTLs for different cache layers
+const REAL_TIME_USAGE_TTL = 5 * 60; // 5 minutes for real-time data
+const AGGREGATED_USAGE_TTL = 30 * 60; // 30 minutes for aggregated data
+
+export interface TagUsageEvent {
+  tenantId: number;
+  tenant: string;
+  tagId: number;
+  tagName: string;
+  usdAmount: number;
+  weight: number;
+  timestamp: Date;
+  usageLedgerId?: number;
+  sessionId?: string;
+  model?: string;
+  route?: string;
+}
+
+export interface TagUsageQuery {
+  tenantId: number;
+  tenant: string;
+  tagIds: number[];
+  startDate: Date;
+  endDate: Date;
+  period?: "daily" | "monthly" | "custom";
+}
+
+export interface TagUsageResult {
+  tagId: number;
+  totalUsage: number;
+  eventCount: number;
+  period: string;
+  startDate: Date;
+  endDate: Date;
+}
+
+/**
+ * Enhanced tag usage tracking with Redis streams, sorted sets, and atomic operations
+ */
+export class TagUsageTracker {
+  private redis: ReturnType<typeof createClient>;
+  private prisma: PrismaClient;
+
+  constructor(redis: ReturnType<typeof createClient>, prisma: PrismaClient) {
+    this.redis = redis;
+    this.prisma = prisma;
+  }
+
+  // Generate cache keys
+  private getUsageStreamKey(tenantId: number): string {
+    return `tag_usage_stream:${tenantId}`;
+  }
+
+  private getUsageSortedSetKey(
+    tenantId: number,
+    tagId: number,
+    period: string,
+  ): string {
+    return `tag_usage_zset:${tenantId}:${tagId}:${period}`;
+  }
+
+  private getAggregatedUsageKey(
+    tenantId: number,
+    tagId: number,
+    period: string,
+    date: string,
+  ): string {
+    return `tag_usage_agg:${tenantId}:${tagId}:${period}:${date}`;
+  }
+
+  private getRealTimeUsageKey(tenantId: number, tagId: number): string {
+    return `tag_usage_rt:${tenantId}:${tagId}`;
+  }
+
+  /**
+   * Record tag usage event atomically using Redis streams and sorted sets
+   */
+  async recordTagUsage(event: TagUsageEvent): Promise<void> {
+    const timestamp = event.timestamp.getTime();
+    const weightedUsage = event.usdAmount * event.weight;
+
+    try {
+      // Use Redis pipeline for atomic operations
+      const pipeline = this.redis.multi();
+
+      // 1. Add to usage stream for audit trail and worker processing
+      const streamKey = this.getUsageStreamKey(event.tenantId);
+      pipeline.xAdd(streamKey, "*", {
+        tagId: event.tagId.toString(),
+        tagName: event.tagName,
+        usdAmount: event.usdAmount.toString(),
+        weight: event.weight.toString(),
+        weightedUsage: weightedUsage.toString(),
+        timestamp: timestamp.toString(),
+        tenant: event.tenant,
+        usageLedgerId: event.usageLedgerId?.toString() || "",
+        sessionId: event.sessionId || "",
+        model: event.model || "",
+        route: event.route || "",
+      });
+
+      // 2. Add to sorted sets for time-based queries (score = timestamp)
+      const dailyKey = this.getUsageSortedSetKey(
+        event.tenantId,
+        event.tagId,
+        "daily",
+      );
+      const monthlyKey = this.getUsageSortedSetKey(
+        event.tenantId,
+        event.tagId,
+        "monthly",
+      );
+
+      pipeline.zAdd(dailyKey, {
+        score: timestamp,
+        value: JSON.stringify({
+          usd: weightedUsage,
+          weight: event.weight,
+          ts: timestamp,
+          sessionId: event.sessionId,
+          model: event.model,
+        }),
+      });
+
+      pipeline.zAdd(monthlyKey, {
+        score: timestamp,
+        value: JSON.stringify({
+          usd: weightedUsage,
+          weight: event.weight,
+          ts: timestamp,
+          sessionId: event.sessionId,
+          model: event.model,
+        }),
+      });
+
+      // 3. Increment real-time usage counters
+      const rtKey = this.getRealTimeUsageKey(event.tenantId, event.tagId);
+      pipeline.incrByFloat(rtKey, weightedUsage);
+      pipeline.expire(rtKey, REAL_TIME_USAGE_TTL);
+
+      // 4. Update aggregated usage for current day/month
+      const now = new Date(timestamp);
+      const dailyDate = now.toISOString().slice(0, 10); // YYYY-MM-DD
+      const monthlyDate = now.toISOString().slice(0, 7); // YYYY-MM
+
+      const dailyAggKey = this.getAggregatedUsageKey(
+        event.tenantId,
+        event.tagId,
+        "daily",
+        dailyDate,
+      );
+      const monthlyAggKey = this.getAggregatedUsageKey(
+        event.tenantId,
+        event.tagId,
+        "monthly",
+        monthlyDate,
+      );
+
+      pipeline.incrByFloat(dailyAggKey, weightedUsage);
+      pipeline.expire(dailyAggKey, AGGREGATED_USAGE_TTL);
+      pipeline.incrByFloat(monthlyAggKey, weightedUsage);
+      pipeline.expire(monthlyAggKey, AGGREGATED_USAGE_TTL);
+
+      // 5. Set TTL on sorted sets to prevent unbounded growth
+      pipeline.expire(dailyKey, 24 * 60 * 60); // 1 day
+      pipeline.expire(monthlyKey, 32 * 24 * 60 * 60); // ~1 month
+
+      // Execute all operations atomically
+      await pipeline.exec();
+    } catch (error) {
+      console.error("Error recording tag usage:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Query tag usage with efficient Redis operations and database fallback
+   */
+  async queryTagUsage(query: TagUsageQuery): Promise<TagUsageResult[]> {
+    const results: TagUsageResult[] = [];
+
+    for (const tagId of query.tagIds) {
+      try {
+        let totalUsage = 0;
+        let eventCount = 0;
+
+        // Try Redis sorted set first for better performance
+        if (query.period === "daily" || query.period === "monthly") {
+          const cachedResult = await this.getAggregatedUsageFromCache(
+            query.tenantId,
+            tagId,
+            query.period,
+            query.startDate,
+            query.endDate,
+          );
+
+          if (cachedResult) {
+            totalUsage = cachedResult.totalUsage;
+            eventCount = cachedResult.eventCount;
+          }
+        }
+
+        // Fallback to sorted set range query if aggregated cache miss
+        if (totalUsage === 0) {
+          const sortedSetResult = await this.getUsageFromSortedSet(
+            query.tenantId,
+            tagId,
+            query.period || "daily",
+            query.startDate,
+            query.endDate,
+          );
+
+          if (sortedSetResult) {
+            totalUsage = sortedSetResult.totalUsage;
+            eventCount = sortedSetResult.eventCount;
+          }
+        }
+
+        // Final fallback to database (cached in tag-cache.ts)
+        if (totalUsage === 0) {
+          totalUsage = await this.getUsageFromDatabase(
+            query.tenantId,
+            tagId,
+            query.startDate,
+            query.endDate,
+          );
+        }
+
+        results.push({
+          tagId,
+          totalUsage,
+          eventCount,
+          period: query.period || "custom",
+          startDate: query.startDate,
+          endDate: query.endDate,
+        });
+      } catch (error) {
+        console.error(`Error querying usage for tag ${tagId}:`, error);
+        // Return zero usage on error to prevent blocking
+        results.push({
+          tagId,
+          totalUsage: 0,
+          eventCount: 0,
+          period: query.period || "custom",
+          startDate: query.startDate,
+          endDate: query.endDate,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get real-time usage for immediate budget checks
+   */
+  async getRealTimeUsage(tenantId: number, tagId: number): Promise<number> {
+    try {
+      const key = this.getRealTimeUsageKey(tenantId, tagId);
+      const usage = await this.redis.get(key);
+      return usage ? parseFloat(usage) : 0;
+    } catch (error) {
+      console.warn("Error getting real-time tag usage:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Batch query for multiple tags (optimized for budget checking)
+   */
+  async batchQueryTagUsage(
+    tenantId: number,
+    tagIds: number[],
+    period: "daily" | "monthly",
+    date?: Date,
+  ): Promise<Record<number, number>> {
+    const result: Record<number, number> = {};
+
+    if (tagIds.length === 0) return result;
+
+    try {
+      const pipeline = this.redis.multi();
+      const keys: string[] = [];
+
+      // Build pipeline for batch query
+      for (const tagId of tagIds) {
+        const dateStr = (date || new Date())
+          .toISOString()
+          .slice(0, period === "daily" ? 10 : 7);
+        const key = this.getAggregatedUsageKey(
+          tenantId,
+          tagId,
+          period,
+          dateStr,
+        );
+        keys.push(key);
+        pipeline.get(key);
+      }
+
+      const results = await pipeline.exec();
+
+      if (results) {
+        for (let i = 0; i < tagIds.length; i++) {
+          const pipelineResult = results[i] as unknown as [
+            Error | null,
+            string | null,
+          ];
+          const usage = pipelineResult[1];
+          result[tagIds[i]] = usage ? parseFloat(usage) : 0;
+        }
+      }
+    } catch (error) {
+      console.warn("Error in batch tag usage query:", error);
+      // Initialize all to 0 on error
+      for (const tagId of tagIds) {
+        result[tagId] = 0;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Clean up old usage data to prevent memory leaks
+   */
+  async cleanupOldUsageData(daysToKeep: number = 30): Promise<void> {
+    try {
+      const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
+
+      // Get all sorted set keys
+      const patterns = ["tag_usage_zset:*:daily", "tag_usage_zset:*:monthly"];
+
+      for (const pattern of patterns) {
+        const keys = await this.redis.keys(pattern);
+
+        if (keys.length > 0) {
+          const pipeline = this.redis.multi();
+
+          for (const key of keys) {
+            // Remove entries older than cutoff
+            pipeline.zRemRangeByScore(key, "-inf", cutoffTime);
+          }
+
+          await pipeline.exec();
+        }
+      }
+    } catch (error) {
+      console.warn("Error cleaning up old usage data:", error);
+    }
+  }
+
+  // Private helper methods
+  private async getAggregatedUsageFromCache(
+    tenantId: number,
+    tagId: number,
+    period: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{ totalUsage: number; eventCount: number } | null> {
+    try {
+      // For simple same-day/month queries, use aggregated cache
+      if (this.isSamePeriod(startDate, endDate, period)) {
+        const dateStr =
+          period === "daily"
+            ? startDate.toISOString().slice(0, 10)
+            : startDate.toISOString().slice(0, 7);
+
+        const key = this.getAggregatedUsageKey(
+          tenantId,
+          tagId,
+          period,
+          dateStr,
+        );
+        const usage = await this.redis.get(key);
+
+        if (usage) {
+          return {
+            totalUsage: parseFloat(usage),
+            eventCount: 1, // Approximation since we don't track count separately
+          };
+        }
+      }
+    } catch (error) {
+      console.warn("Error getting aggregated usage from cache:", error);
+    }
+
+    return null;
+  }
+
+  private async getUsageFromSortedSet(
+    tenantId: number,
+    tagId: number,
+    period: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{ totalUsage: number; eventCount: number } | null> {
+    try {
+      const key = this.getUsageSortedSetKey(tenantId, tagId, period);
+      const minScore = startDate.getTime();
+      const maxScore = endDate.getTime();
+
+      const entries = await this.redis.zRangeByScore(key, minScore, maxScore);
+
+      let totalUsage = 0;
+      let eventCount = 0;
+
+      for (const entry of entries) {
+        try {
+          const data = JSON.parse(entry);
+          totalUsage += data.usd || 0;
+          eventCount++;
+        } catch (parseError) {
+          console.warn("Error parsing sorted set entry:", parseError);
+        }
+      }
+
+      return eventCount > 0 ? { totalUsage, eventCount } : null;
+    } catch (error) {
+      console.warn("Error getting usage from sorted set:", error);
+      return null;
+    }
+  }
+
+  private async getUsageFromDatabase(
+    tenantId: number,
+    tagId: number,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    try {
+      const result = await this.prisma.requestTag.findMany({
+        where: {
+          tagId,
+          usage: {
+            tenantId,
+            ts: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+        },
+        include: {
+          usage: true,
+        },
+      });
+
+      let totalUsage = 0;
+      for (const requestTag of result) {
+        const baseUsage = parseFloat(requestTag.usage.usd.toString());
+        const weightedUsage = baseUsage * requestTag.weight;
+        totalUsage += weightedUsage;
+      }
+
+      return totalUsage;
+    } catch (error) {
+      console.error("Error getting usage from database:", error);
+      return 0;
+    }
+  }
+
+  private isSamePeriod(
+    startDate: Date,
+    endDate: Date,
+    period: string,
+  ): boolean {
+    // Use UTC to avoid timezone-related date boundary issues
+    if (period === "daily") {
+      return (
+        startDate.getUTCFullYear() === endDate.getUTCFullYear() &&
+        startDate.getUTCMonth() === endDate.getUTCMonth() &&
+        startDate.getUTCDate() === endDate.getUTCDate()
+      );
+    } else if (period === "monthly") {
+      return (
+        startDate.getUTCFullYear() === endDate.getUTCFullYear() &&
+        startDate.getUTCMonth() === endDate.getUTCMonth()
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Get usage statistics for analytics
+   */
+  async getUsageStatistics(
+    tenantId: number,
+    tagId: number,
+    period: "daily" | "monthly",
+    days: number = 30,
+  ): Promise<Array<{ date: string; usage: number; events: number }>> {
+    const stats: Array<{ date: string; usage: number; events: number }> = [];
+
+    try {
+      const key = this.getUsageSortedSetKey(tenantId, tagId, period);
+      const endTime = Date.now();
+      const startTime = endTime - days * 24 * 60 * 60 * 1000;
+
+      const entries = await this.redis.zRangeByScore(key, startTime, endTime);
+
+      const dailyStats: Record<string, { usage: number; events: number }> = {};
+
+      for (const entry of entries) {
+        try {
+          const data = JSON.parse(entry);
+          const date = new Date(data.ts).toISOString().slice(0, 10);
+
+          if (!dailyStats[date]) {
+            dailyStats[date] = { usage: 0, events: 0 };
+          }
+
+          // Accumulate with normalization to mitigate floating point artifacts
+          dailyStats[date].usage = Number(
+            (dailyStats[date].usage + (data.usd || 0)).toFixed(12),
+          );
+          dailyStats[date].events += 1;
+        } catch (parseError) {
+          console.warn("Error parsing usage entry:", parseError);
+        }
+      }
+
+      for (const [date, data] of Object.entries(dailyStats)) {
+        // Final normalization (ensures 0.15000000000000002 -> 0.15)
+        stats.push({
+          date,
+          usage: Number(data.usage.toFixed(12)).valueOf(),
+          events: data.events,
+        });
+      }
+
+      stats.sort((a, b) => a.date.localeCompare(b.date));
+    } catch (error) {
+      console.error("Error getting usage statistics:", error);
+    }
+
+    return stats;
+  }
+}
+
+// Helper function to create a tracker instance
+export function createTagUsageTracker(
+  redis: ReturnType<typeof createClient>,
+  prisma: PrismaClient,
+): TagUsageTracker {
+  return new TagUsageTracker(redis, prisma);
+}
+
+// Types are already exported at the top of the file

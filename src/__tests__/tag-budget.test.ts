@@ -7,19 +7,32 @@ import {
   getTagBudgetCacheKey,
 } from "../tag-budget.js";
 
+// Define typed mocks to avoid 'any'
+type PrismaMock = {
+  tagBudget: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
+};
+
+type RedisMock = {
+  get: ReturnType<typeof vi.fn>;
+  setEx: ReturnType<typeof vi.fn>;
+  del: ReturnType<typeof vi.fn>;
+};
+
 // Mock Prisma
-const mockPrisma = {
+const mockPrisma: PrismaMock = {
   tagBudget: {
     findMany: vi.fn(),
   },
-} as unknown as PrismaClient;
+};
 
 // Mock Redis client
-const mockRedis = {
+const mockRedis: RedisMock = {
   get: vi.fn(),
   setEx: vi.fn(),
   del: vi.fn(),
-} as unknown as ReturnType<typeof createClient>;
+};
 
 describe("Tag Budget Cache", () => {
   beforeEach(() => {
@@ -63,9 +76,13 @@ describe("Tag Budget Cache", () => {
         },
       ];
 
-      (mockRedis.get as any).mockResolvedValue(JSON.stringify(cachedData));
+      mockRedis.get.mockResolvedValue(JSON.stringify(cachedData));
 
-      const result = await getCachedTagBudgets(123, mockRedis, mockPrisma);
+      const result = await getCachedTagBudgets(
+        123,
+        mockRedis as unknown as ReturnType<typeof createClient>,
+        mockPrisma as unknown as PrismaClient,
+      );
 
       expect(mockRedis.get).toHaveBeenCalledWith("tag_session_budget:123");
       expect(mockPrisma.tagBudget.findMany).not.toHaveBeenCalled();
@@ -73,10 +90,14 @@ describe("Tag Budget Cache", () => {
     });
 
     it("should fallback to database when cache miss", async () => {
-      (mockRedis.get as any).mockResolvedValue(null);
-      (mockPrisma.tagBudget.findMany as any).mockResolvedValue([sampleTagBudget]);
+      mockRedis.get.mockResolvedValue(null);
+      mockPrisma.tagBudget.findMany.mockResolvedValue([sampleTagBudget]);
 
-      const result = await getCachedTagBudgets(123, mockRedis, mockPrisma);
+      const result = await getCachedTagBudgets(
+        123,
+        mockRedis as unknown as ReturnType<typeof createClient>,
+        mockPrisma as unknown as PrismaClient,
+      );
 
       expect(mockRedis.get).toHaveBeenCalledWith("tag_session_budget:123");
       expect(mockPrisma.tagBudget.findMany).toHaveBeenCalledWith({
@@ -89,9 +110,13 @@ describe("Tag Budget Cache", () => {
     });
 
     it("should fallback to database when no redis", async () => {
-      (mockPrisma.tagBudget.findMany as any).mockResolvedValue([sampleTagBudget]);
+      mockPrisma.tagBudget.findMany.mockResolvedValue([sampleTagBudget]);
 
-      const result = await getCachedTagBudgets(123, undefined, mockPrisma);
+      const result = await getCachedTagBudgets(
+        123,
+        undefined,
+        mockPrisma as unknown as PrismaClient,
+      );
 
       expect(mockPrisma.tagBudget.findMany).toHaveBeenCalledWith({
         where: { tagId: 123, isActive: true },
@@ -101,12 +126,16 @@ describe("Tag Budget Cache", () => {
     });
 
     it("should handle Redis errors gracefully", async () => {
-      (mockRedis.get as any).mockRejectedValue(new Error("Redis connection failed"));
-      (mockPrisma.tagBudget.findMany as any).mockResolvedValue([sampleTagBudget]);
+      mockRedis.get.mockRejectedValue(new Error("Redis connection failed"));
+      mockPrisma.tagBudget.findMany.mockResolvedValue([sampleTagBudget]);
 
       const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      const result = await getCachedTagBudgets(123, mockRedis, mockPrisma);
+      const result = await getCachedTagBudgets(
+        123,
+        mockRedis as unknown as ReturnType<typeof createClient>,
+        mockPrisma as unknown as PrismaClient,
+      );
 
       expect(result).toHaveLength(1);
       expect(mockPrisma.tagBudget.findMany).toHaveBeenCalled();
@@ -119,13 +148,17 @@ describe("Tag Budget Cache", () => {
     });
 
     it("should handle cache set errors gracefully", async () => {
-      (mockRedis.get as any).mockResolvedValue(null);
-      (mockRedis.setEx as any).mockRejectedValue(new Error("Redis set failed"));
-      (mockPrisma.tagBudget.findMany as any).mockResolvedValue([sampleTagBudget]);
+      mockRedis.get.mockResolvedValue(null);
+      mockRedis.setEx.mockRejectedValue(new Error("Redis set failed"));
+      mockPrisma.tagBudget.findMany.mockResolvedValue([sampleTagBudget]);
 
       const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      const result = await getCachedTagBudgets(123, mockRedis, mockPrisma);
+      const result = await getCachedTagBudgets(
+        123,
+        mockRedis as unknown as ReturnType<typeof createClient>,
+        mockPrisma as unknown as PrismaClient,
+      );
 
       expect(result).toHaveLength(1);
       expect(mockPrisma.tagBudget.findMany).toHaveBeenCalled();
@@ -145,17 +178,22 @@ describe("Tag Budget Cache", () => {
 
   describe("invalidateTagBudgetCache", () => {
     it("should delete cache key", async () => {
-      await invalidateTagBudgetCache(123, mockRedis);
+      await invalidateTagBudgetCache(
+        123,
+        mockRedis as unknown as ReturnType<typeof createClient>,
+      );
       expect(mockRedis.del).toHaveBeenCalledWith("tag_session_budget:123");
     });
 
     it("should handle Redis errors gracefully", async () => {
-      (mockRedis.del as any).mockRejectedValue(new Error("Redis error"));
+      mockRedis.del.mockRejectedValue(new Error("Redis error"));
       const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      
-      // Should not throw
+
       await expect(
-        invalidateTagBudgetCache(123, mockRedis),
+        invalidateTagBudgetCache(
+          123,
+          mockRedis as unknown as ReturnType<typeof createClient>,
+        ),
       ).resolves.toBeUndefined();
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -168,7 +206,6 @@ describe("Tag Budget Cache", () => {
 
     it("should do nothing when no redis", async () => {
       await invalidateTagBudgetCache(123, undefined);
-      // Should not throw and complete successfully
     });
   });
 });

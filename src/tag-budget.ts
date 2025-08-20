@@ -1,10 +1,94 @@
 import { PrismaClient } from "@prisma/client";
 import { readBudget } from "./budget.js";
-import { getCachedTagUsage, cacheTagUsage } from "./tag-cache.js";
+import { getCachedTagUsage } from "./tag-cache.js";
 import { createClient } from "redis";
+import { createTagUsageTracker } from "./tag-usage-tracking.js";
 
 // Cache TTL for tag budget configuration
 const TAG_BUDGET_CONFIG_TTL = 30 * 60; // 30 minutes, same as tag session budget TTL
+
+// Optimized tag usage retrieval using Redis-based tracking
+async function getOptimizedTagUsage(
+  tenantId: number,
+  tagId: number,
+  period: string,
+  startDate: Date,
+  endDate: Date,
+  redis?: ReturnType<typeof createClient>,
+  prisma?: PrismaClient,
+): Promise<number> {
+  if (!redis || !prisma) {
+    // Fallback to database
+    return await getTagUsageFromDatabase(
+      tenantId,
+      tagId,
+      startDate,
+      endDate,
+      prisma || ({} as PrismaClient),
+    );
+  }
+
+  try {
+    // Use the new Redis-based tracker for optimized queries
+    const tracker = createTagUsageTracker(redis, prisma);
+
+    if (period === "daily" || period === "monthly") {
+      // Use batch query for better performance
+      const usageData = await tracker.batchQueryTagUsage(
+        tenantId,
+        [tagId],
+        period as "daily" | "monthly",
+        startDate,
+      );
+
+      if (usageData[tagId] > 0) {
+        return usageData[tagId];
+      }
+
+      // Fallback to range query if batch query returns 0
+      const results = await tracker.queryTagUsage({
+        tenantId,
+        tenant: "", // Not used in this context
+        tagIds: [tagId],
+        startDate,
+        endDate,
+        period: period as "daily" | "monthly",
+      });
+
+      return results.length > 0 ? results[0].totalUsage : 0;
+    } else {
+      // For custom periods, use the general query
+      const results = await tracker.queryTagUsage({
+        tenantId,
+        tenant: "", // Not used in this context
+        tagIds: [tagId],
+        startDate,
+        endDate,
+        period: "custom",
+      });
+
+      return results.length > 0 ? results[0].totalUsage : 0;
+    }
+  } catch (error) {
+    console.warn(`Error in optimized tag usage query for tag ${tagId}:`, error);
+    // Fallback to original method
+    return (
+      (await getCachedTagUsage(
+        "", // tenant name not used in fallback
+        tagId,
+        period,
+        redis,
+      )) ??
+      (await getTagUsageFromDatabase(
+        tenantId,
+        tagId,
+        startDate,
+        endDate,
+        prisma,
+      ))
+    );
+  }
+}
 
 export interface CachedTagBudget {
   id: number;
@@ -181,47 +265,29 @@ export async function checkTagBudgets({
             endDate: budgetData.endDate,
           });
 
-          // Try to get cached usage first
-          usage =
-            (await getCachedTagUsage(
-              tenant,
-              validatedTag.id,
-              tagBudget.period,
-              redis,
-            )) ?? 0;
-
-          if (usage === 0) {
-            // Cache miss - get from database
-            usage = await getTagUsageFromDatabase(
-              tenantId,
-              validatedTag.id,
-              budgetData.startDate,
-              budgetData.endDate,
-              prisma,
-            );
-
-            // Cache the result for future requests
-            if (usage > 0) {
-              await cacheTagUsage(
-                tenant,
-                validatedTag.id,
-                tagBudget.period,
-                usage,
-                redis,
-              );
-            }
-          }
+          // Use optimized Redis-based usage tracking
+          usage = await getOptimizedTagUsage(
+            tenantId,
+            validatedTag.id,
+            tagBudget.period,
+            budgetData.startDate,
+            budgetData.endDate,
+            redis,
+            prisma,
+          );
         } else if (
           tagBudget.period === "custom" &&
           tagBudget.startDate &&
           tagBudget.endDate
         ) {
-          // For custom periods, use the budget's own dates
-          usage = await getTagUsageFromDatabase(
+          // For custom periods, use optimized tracking
+          usage = await getOptimizedTagUsage(
             tenantId,
             validatedTag.id,
+            tagBudget.period,
             tagBudget.startDate,
             tagBudget.endDate,
+            redis,
             prisma,
           );
         }
@@ -345,15 +411,17 @@ export async function checkHierarchicalTagBudgets({
               tenant,
               period: parentBudget.period,
               prisma,
-              redis: undefined, // Not using Redis cache for hierarchical checks
+              redis, // Use Redis cache for better performance
               defaultBudget: 0,
             });
 
-            parentUsage = await getTagUsageFromDatabase(
+            parentUsage = await getOptimizedTagUsage(
               tenantId,
               currentTag.parent.id,
+              parentBudget.period,
               budgetData.startDate,
               budgetData.endDate,
+              redis,
               prisma,
             );
           } else if (
@@ -361,12 +429,14 @@ export async function checkHierarchicalTagBudgets({
             parentBudget.startDate &&
             parentBudget.endDate
           ) {
-            // For custom periods, use the budget's own dates
-            parentUsage = await getTagUsageFromDatabase(
+            // For custom periods, use optimized tracking
+            parentUsage = await getOptimizedTagUsage(
               tenantId,
               currentTag.parent.id,
+              parentBudget.period,
               parentBudget.startDate,
               parentBudget.endDate,
+              redis,
               prisma,
             );
           }
