@@ -741,7 +741,13 @@ export async function buildServer() {
         const tenantRecord = await prismaClient.tenant.findUnique({
           where: { name: tenant },
         });
-        const tenantId = tenantRecord?.id || 1; // Fallback to 1 if not found
+
+        if (!tenantRecord) {
+          console.warn(`Tenant not found for tag usage tracking: ${tenant}`);
+          return payload; // Skip tag tracking for this request instead of failing
+        }
+
+        const tenantId = tenantRecord.id;
 
         for (const tag of validatedTags) {
           await tracker.recordTagUsage({

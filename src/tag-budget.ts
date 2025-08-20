@@ -18,13 +18,18 @@ async function getOptimizedTagUsage(
   prisma?: PrismaClient,
 ): Promise<number> {
   if (!redis || !prisma) {
+    if (!prisma) {
+      throw new Error(
+        "Prisma client is required for getTagUsageFromDatabase fallback.",
+      );
+    }
     // Fallback to database
     return await getTagUsageFromDatabase(
       tenantId,
       tagId,
       startDate,
       endDate,
-      prisma || ({} as PrismaClient),
+      prisma,
     );
   }
 

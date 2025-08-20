@@ -5,6 +5,10 @@ import { createTagUsageTracker } from "./tag-usage-tracking.js";
 import dotenv from "dotenv";
 dotenv.config();
 
+// Cache TTL constants for tag usage tracking
+const LEGACY_DAILY_TAG_USAGE_TTL_SECONDS = 5 * 60; // Reduced TTL since Redis-based tracking is primary
+const LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS = 10 * 60; // Reduced TTL since Redis-based tracking is primary
+
 async function main() {
   const prisma = new PrismaClient();
   await prisma.tenant.upsert({
@@ -106,7 +110,7 @@ async function main() {
               "daily",
               weightedUsage,
               redis,
-              5 * 60, // Reduced TTL since Redis-based tracking is primary
+              LEGACY_DAILY_TAG_USAGE_TTL_SECONDS,
             );
 
             await incrementTagUsage(
@@ -115,7 +119,7 @@ async function main() {
               "monthly",
               weightedUsage,
               redis,
-              10 * 60, // Reduced TTL since Redis-based tracking is primary
+              LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS,
             );
           }
         } catch (error) {

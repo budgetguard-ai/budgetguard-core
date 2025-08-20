@@ -304,12 +304,20 @@ export class TagUsageTracker {
 
       if (results) {
         for (let i = 0; i < tagIds.length; i++) {
-          const pipelineResult = results[i] as unknown as [
-            Error | null,
-            string | null,
-          ];
-          const usage = pipelineResult[1];
-          result[tagIds[i]] = usage ? parseFloat(usage) : 0;
+          const pipelineResult = results[i];
+          if (Array.isArray(pipelineResult) && pipelineResult.length === 2) {
+            const [error, usage] = pipelineResult as unknown as [
+              Error | null,
+              string | null,
+            ];
+            if (!error && usage !== null) {
+              result[tagIds[i]] = parseFloat(usage);
+            } else {
+              result[tagIds[i]] = 0;
+            }
+          } else {
+            result[tagIds[i]] = 0;
+          }
         }
       }
     } catch (error) {
@@ -511,10 +519,9 @@ export class TagUsageTracker {
             dailyStats[date] = { usage: 0, events: 0 };
           }
 
-          // Accumulate with normalization to mitigate floating point artifacts
-          dailyStats[date].usage = Number(
-            (dailyStats[date].usage + (data.usd || 0)).toFixed(12),
-          );
+          // Accumulate with normalized floating point arithmetic
+          dailyStats[date].usage =
+            Math.round((dailyStats[date].usage + (data.usd || 0)) * 100) / 100;
           dailyStats[date].events += 1;
         } catch (parseError) {
           console.warn("Error parsing usage entry:", parseError);
@@ -522,10 +529,9 @@ export class TagUsageTracker {
       }
 
       for (const [date, data] of Object.entries(dailyStats)) {
-        // Final normalization (ensures 0.15000000000000002 -> 0.15)
         stats.push({
           date,
-          usage: Number(data.usage.toFixed(12)).valueOf(),
+          usage: data.usage,
           events: data.events,
         });
       }

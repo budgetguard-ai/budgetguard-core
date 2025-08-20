@@ -123,8 +123,9 @@ export class TagUsageCleanup {
       for (const key of keys) {
         try {
           // Use XTRIM to keep only recent entries
-          // Keep approximately the number of entries from the last X days
-          const maxLength = daysToKeep * 24 * 60; // Assume ~1 entry per minute max
+          // Configurable max entries based on expected load patterns
+          const ESTIMATED_ENTRIES_PER_DAY = 24 * 60; // Default: ~1 entry per minute
+          const maxLength = daysToKeep * ESTIMATED_ENTRIES_PER_DAY;
           await this.redis.xTrim(key, "MAXLEN", maxLength);
           processedStreams++;
         } catch (error) {
