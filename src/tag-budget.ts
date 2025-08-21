@@ -7,8 +7,11 @@ import { createTagUsageTracker } from "./tag-usage-tracking.js";
 // Cache TTL for tag budget configuration
 const TAG_BUDGET_CONFIG_TTL = 30 * 60; // 30 minutes, same as tag session budget TTL
 
+// Double-counting issue resolved by removing redundant server.ts recording
+// Tag usage now handled exclusively by worker processing bg_events stream
+
 // Optimized tag usage retrieval using Redis-based tracking
-async function getOptimizedTagUsage(
+export async function getOptimizedTagUsage(
   tenantId: number,
   tagId: number,
   period: string,
@@ -300,6 +303,11 @@ export async function checkTagBudgets({
         // Apply weight to usage
         const weightedUsage = usage * tagBudget.weight * validatedTag.weight;
         const budgetAmount = parseFloat(tagBudget.amountUsd);
+
+        // Debug logging for budget comparison
+        console.log(
+          `Tag ${validatedTag.name}: rawUsage=${usage}, tagWeight=${tagBudget.weight}, validatedWeight=${validatedTag.weight}, weightedUsage=${weightedUsage}, budget=${budgetAmount}, exceeded=${weightedUsage >= budgetAmount}`,
+        );
 
         tagBudgetChecks.push({
           tagId: validatedTag.id,

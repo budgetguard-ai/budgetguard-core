@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { apiClient } from "../services/api";
-import { getDateRangeForRange } from "../utils/dateRange";
+import {
+  getDateRangeForRange,
+  getBudgetDateRangeForRange,
+} from "../utils/dateRange";
 import type {
   Tenant,
   TagAnalytics,
@@ -144,11 +147,14 @@ export const useUsageInsights = (
     try {
       const dateRangeOptions = getDateRangeForRange(timeRange);
 
+      // Use UTC date ranges for tag analytics to match enforcement logic
+      const budgetDateRangeOptions = getBudgetDateRangeForRange(timeRange);
+
       // Fetch all usage data in parallel
       const [modelBreakdownData, tagAnalytics, usageHistoryData] =
         await Promise.all([
           apiClient.getTenantModelBreakdown(tenant.id, dateRangeOptions),
-          apiClient.getTagUsageAnalytics(tenant.id, dateRangeOptions),
+          apiClient.getTagUsageAnalytics(tenant.id, budgetDateRangeOptions), // Use UTC dates for budget data
           apiClient.getTenantUsageHistory(tenant.id, dateRangeOptions),
         ]);
 

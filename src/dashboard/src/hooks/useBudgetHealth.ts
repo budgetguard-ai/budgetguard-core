@@ -179,9 +179,10 @@ export const useBudgetHealth = (
 
     try {
       // Fetch tenant budgets and tag analytics in parallel
+      // Note: Tag budget health now uses actual budget periods on the backend
       const [budgets, tagAnalytics] = await Promise.all([
         apiClient.getTenantBudgets(tenant.id),
-        apiClient.getTagUsageAnalytics(tenant.id),
+        apiClient.getTagUsageAnalytics(tenant.id, { days: 1 }), // Minimal window since backend calculates correct periods
       ]);
 
       // Process budget status

@@ -1,13 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
-import { incrementTagUsage } from "./tag-cache.js";
+// Removed unused import: incrementTagUsage from "./tag-cache.js"
 import { createTagUsageTracker } from "./tag-usage-tracking.js";
 import dotenv from "dotenv";
 dotenv.config();
 
-// Cache TTL constants for tag usage tracking
-const LEGACY_DAILY_TAG_USAGE_TTL_SECONDS = 5 * 60; // Reduced TTL since Redis-based tracking is primary
-const LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS = 10 * 60; // Reduced TTL since Redis-based tracking is primary
+// Legacy TTL constants removed - no longer using legacy cache fallback
 
 async function main() {
   const prisma = new PrismaClient();
@@ -100,7 +98,7 @@ async function main() {
               // Continue with legacy cache update as fallback
             }
 
-            // Keep legacy cache increment as fallback (shorter TTL for gradual migration)
+            /* Keep legacy cache increment as fallback (shorter TTL for gradual migration)
             const weightedUsage = usdValue * tag.weight;
             const tenantName = data.tenant;
 
@@ -120,7 +118,7 @@ async function main() {
               weightedUsage,
               redis,
               LEGACY_MONTHLY_TAG_USAGE_TTL_SECONDS,
-            );
+            ); */
           }
         } catch (error) {
           console.error("Error processing tags for usage entry:", error);

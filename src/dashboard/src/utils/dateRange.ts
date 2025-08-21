@@ -22,7 +22,98 @@ function formatDateLocal(date: Date): string {
 }
 
 /**
- * Calculate date range options for API calls based on time range selection
+ * Formats a date to YYYY-MM-DD string using UTC timezone
+ * Use this for budget/usage queries to match enforcement periods
+ */
+function formatDateUTC(date: Date): string {
+  return (
+    date.getUTCFullYear() +
+    "-" +
+    String(date.getUTCMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(date.getUTCDate()).padStart(2, "0")
+  );
+}
+
+/**
+ * Calculate date range options for budget/usage API calls using UTC periods
+ * This matches the enforcement logic which operates in UTC
+ */
+export function getBudgetDateRangeForRange(range: string): DateRangeOptions {
+  const nowUTC = new Date();
+
+  switch (range) {
+    case "1w": {
+      // This week: from Sunday to today (UTC)
+      const startOfWeekUTC = new Date(nowUTC);
+      startOfWeekUTC.setUTCDate(nowUTC.getUTCDate() - nowUTC.getUTCDay()); // Go to Sunday
+      startOfWeekUTC.setUTCHours(0, 0, 0, 0);
+      const endOfWeekUTC = new Date(nowUTC);
+      endOfWeekUTC.setUTCHours(23, 59, 59, 999);
+
+      return {
+        startDate: formatDateUTC(startOfWeekUTC),
+        endDate: formatDateUTC(endOfWeekUTC),
+      };
+    }
+    case "lw": {
+      // Last week: complete Sunday-Saturday week (UTC)
+      const startOfLastWeekUTC = new Date(nowUTC);
+      startOfLastWeekUTC.setUTCDate(
+        nowUTC.getUTCDate() - nowUTC.getUTCDay() - 7,
+      ); // Go to last Sunday
+      startOfLastWeekUTC.setUTCHours(0, 0, 0, 0);
+      const endOfLastWeekUTC = new Date(startOfLastWeekUTC);
+      endOfLastWeekUTC.setUTCDate(startOfLastWeekUTC.getUTCDate() + 6); // Go to Saturday
+      endOfLastWeekUTC.setUTCHours(23, 59, 59, 999);
+
+      return {
+        startDate: formatDateUTC(startOfLastWeekUTC),
+        endDate: formatDateUTC(endOfLastWeekUTC),
+      };
+    }
+    case "1m": {
+      // This month: from 1st of current month to today (UTC)
+      const startOfMonthUTC = new Date(
+        Date.UTC(nowUTC.getUTCFullYear(), nowUTC.getUTCMonth(), 1),
+      );
+      const endOfMonthUTC = new Date(nowUTC);
+      endOfMonthUTC.setUTCHours(23, 59, 59, 999);
+
+      return {
+        startDate: formatDateUTC(startOfMonthUTC),
+        endDate: formatDateUTC(endOfMonthUTC),
+      };
+    }
+    case "lm": {
+      // Last month: complete previous month (UTC)
+      const startOfLastMonthUTC = new Date(
+        Date.UTC(nowUTC.getUTCFullYear(), nowUTC.getUTCMonth() - 1, 1),
+      );
+      const endOfLastMonthUTC = new Date(
+        Date.UTC(nowUTC.getUTCFullYear(), nowUTC.getUTCMonth(), 0),
+      ); // Last day of previous month
+      endOfLastMonthUTC.setUTCHours(23, 59, 59, 999);
+
+      return {
+        startDate: formatDateUTC(startOfLastMonthUTC),
+        endDate: formatDateUTC(endOfLastMonthUTC),
+      };
+    }
+    case "7d":
+      return { days: 7 };
+    case "30d":
+      return { days: 30 };
+    case "90d":
+      return { days: 90 };
+    default:
+      return { days: 30 };
+  }
+}
+
+/**
+ * Calculate date range options for general API calls based on time range selection
+ * Uses local timezone for better UX with non-budget data
  */
 export function getDateRangeForRange(range: string): DateRangeOptions {
   const now = new Date();

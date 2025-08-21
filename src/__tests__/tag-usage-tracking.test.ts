@@ -19,6 +19,7 @@ const mockPrisma = {
 const mockRedis = {
   multi: vi.fn(),
   get: vi.fn(),
+  set: vi.fn(),
   zRangeByScore: vi.fn(),
   zRangeWithScores: vi.fn(),
   keys: vi.fn(),
@@ -28,6 +29,7 @@ const mockRedis = {
   exists: vi.fn(),
   zCard: vi.fn(),
   xTrim: vi.fn(),
+  ttl: vi.fn(),
 } as unknown as ReturnType<typeof createClient>;
 
 // Strongly typed helpers to avoid any
@@ -38,6 +40,14 @@ type RequestTagRecord = {
 
 const redisGetMock = mockRedis.get as unknown as vi.Mock<
   Promise<string | null>,
+  [string]
+>;
+const redisSetMock = mockRedis.set as unknown as vi.Mock<
+  Promise<string | null>,
+  [string, string, object?]
+>;
+const redisTtlMock = mockRedis.ttl as unknown as vi.Mock<
+  Promise<number>,
   [string]
 >;
 const zRangeByScoreMock = mockRedis.zRangeByScore as unknown as vi.Mock<
@@ -72,6 +82,8 @@ describe("Tag Usage Tracking", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     redisMultiMock.mockReturnValue(mockPipeline); // replaced '(mockRedis.multi as any)'
+    redisSetMock.mockResolvedValue("OK"); // Mock successful idempotency set
+    redisTtlMock.mockResolvedValue(3600); // Mock TTL for idempotency stats
     tracker = createTagUsageTracker(mockRedis, mockPrisma);
   });
 

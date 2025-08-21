@@ -312,15 +312,14 @@ export async function getOrCreateSession(
     if (redis) {
       try {
         await redis.setEx(
-          sessionCacheKey,
+          `session:${headers.sessionId}`,
           SESSION_CACHE_TTL,
           JSON.stringify(sessionData),
         );
 
         // Also cache the current cost separately for atomic increments
-        const costCacheKey = getSessionCostCacheKey(headers.sessionId);
         await redis.setEx(
-          costCacheKey,
+          `session_cost:${headers.sessionId}`,
           SESSION_COST_CACHE_TTL,
           sessionData.currentCostUsd.toString(),
         );
@@ -375,14 +374,17 @@ export async function getOrCreateSession(
   if (redis) {
     try {
       await redis.setEx(
-        sessionCacheKey,
+        `session:${headers.sessionId}`,
         SESSION_CACHE_TTL,
         JSON.stringify(sessionData),
       );
 
       // Also cache the initial cost
-      const costCacheKey = getSessionCostCacheKey(headers.sessionId);
-      await redis.setEx(costCacheKey, SESSION_COST_CACHE_TTL, "0");
+      await redis.setEx(
+        `session_cost:${headers.sessionId}`,
+        SESSION_COST_CACHE_TTL,
+        "0",
+      );
     } catch (error) {
       console.warn("Redis error caching new session:", error);
     }
