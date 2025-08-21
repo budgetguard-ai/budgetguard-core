@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiClient } from "../services/api";
 import type { Tenant, Budget, TagBudgetHealth } from "../types";
+import { getBudgetDateRangeForRange } from "../utils/dateRange";
 
 export interface BudgetAlert {
   id: string;
@@ -179,9 +180,10 @@ export const useBudgetHealth = (
 
     try {
       // Fetch tenant budgets and tag analytics in parallel
+      // Note: Tag budget health now uses actual budget periods on the backend
       const [budgets, tagAnalytics] = await Promise.all([
         apiClient.getTenantBudgets(tenant.id),
-        apiClient.getTagUsageAnalytics(tenant.id),
+        apiClient.getTagUsageAnalytics(tenant.id, { days: 1 }), // Minimal window since backend calculates correct periods
       ]);
 
       // Process budget status

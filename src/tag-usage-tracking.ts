@@ -79,38 +79,74 @@ export class TagUsageTracker {
    * Record tag usage event atomically using Redis streams and sorted sets
    */
   async recordTagUsage(event: TagUsageEvent): Promise<void> {
-    const timestamp = event.timestamp.getTime();
-    const weightedUsage = event.usdAmount * event.weight;
+    const fullEvent: TagUsageEvent = {
+      ...event,
+    };
+
+    // Enhanced idempotency guard: prevent double-recording from multiple sources
+    let idemKey: string;
+
+    if (fullEvent.usageLedgerId) {
+      // Primary idempotency key for worker-processed events
+      idemKey = `tag_usage_event:${fullEvent.usageLedgerId}:${fullEvent.tagId}`;
+    } else {
+      // Fallback idempotency key for immediate server events (timestamp + session + tag)
+      const fallbackKey = `${fullEvent.timestamp.getTime()}:${fullEvent.sessionId || "nosession"}:${fullEvent.tagId}:${fullEvent.tenantId}`;
+      idemKey = `tag_usage_event_fallback:${fallbackKey}`;
+    }
+
+    // NX means set only if not exists; PX sets a TTL (24h here – tune as needed)
+    const setResult = await this.redis.set(idemKey, "1", {
+      NX: true,
+      PX: 24 * 60 * 60 * 1000,
+    });
+    if (setResult === null) {
+      // Enhanced debug logging
+      console.debug?.(
+        {
+          usageLedgerId: fullEvent.usageLedgerId,
+          tagId: fullEvent.tagId,
+          sessionId: fullEvent.sessionId,
+          idemKey: idemKey,
+          source: fullEvent.usageLedgerId ? "worker" : "server",
+        },
+        "Duplicate tag usage event ignored",
+      );
+      return; // Duplicate detected; abort before any increments
+    }
+
+    const timestamp = fullEvent.timestamp.getTime();
+    const weightedUsage = fullEvent.usdAmount * fullEvent.weight;
 
     try {
       // Use Redis pipeline for atomic operations
       const pipeline = this.redis.multi();
 
       // 1. Add to usage stream for audit trail and worker processing
-      const streamKey = this.getUsageStreamKey(event.tenantId);
+      const streamKey = this.getUsageStreamKey(fullEvent.tenantId);
       pipeline.xAdd(streamKey, "*", {
-        tagId: event.tagId.toString(),
-        tagName: event.tagName,
-        usdAmount: event.usdAmount.toString(),
-        weight: event.weight.toString(),
+        tagId: fullEvent.tagId.toString(),
+        tagName: fullEvent.tagName,
+        usdAmount: fullEvent.usdAmount.toString(),
+        weight: fullEvent.weight.toString(),
         weightedUsage: weightedUsage.toString(),
         timestamp: timestamp.toString(),
-        tenant: event.tenant,
-        usageLedgerId: event.usageLedgerId?.toString() || "",
-        sessionId: event.sessionId || "",
-        model: event.model || "",
-        route: event.route || "",
+        tenant: fullEvent.tenant,
+        usageLedgerId: fullEvent.usageLedgerId?.toString() || "",
+        sessionId: fullEvent.sessionId || "",
+        model: fullEvent.model || "",
+        route: fullEvent.route || "",
       });
 
       // 2. Add to sorted sets for time-based queries (score = timestamp)
       const dailyKey = this.getUsageSortedSetKey(
-        event.tenantId,
-        event.tagId,
+        fullEvent.tenantId,
+        fullEvent.tagId,
         "daily",
       );
       const monthlyKey = this.getUsageSortedSetKey(
-        event.tenantId,
-        event.tagId,
+        fullEvent.tenantId,
+        fullEvent.tagId,
         "monthly",
       );
 
@@ -118,10 +154,10 @@ export class TagUsageTracker {
         score: timestamp,
         value: JSON.stringify({
           usd: weightedUsage,
-          weight: event.weight,
+          weight: fullEvent.weight,
           ts: timestamp,
-          sessionId: event.sessionId,
-          model: event.model,
+          sessionId: fullEvent.sessionId,
+          model: fullEvent.model,
         }),
       });
 
@@ -129,15 +165,18 @@ export class TagUsageTracker {
         score: timestamp,
         value: JSON.stringify({
           usd: weightedUsage,
-          weight: event.weight,
+          weight: fullEvent.weight,
           ts: timestamp,
-          sessionId: event.sessionId,
-          model: event.model,
+          sessionId: fullEvent.sessionId,
+          model: fullEvent.model,
         }),
       });
 
       // 3. Increment real-time usage counters
-      const rtKey = this.getRealTimeUsageKey(event.tenantId, event.tagId);
+      const rtKey = this.getRealTimeUsageKey(
+        fullEvent.tenantId,
+        fullEvent.tagId,
+      );
       pipeline.incrByFloat(rtKey, weightedUsage);
       pipeline.expire(rtKey, REAL_TIME_USAGE_TTL);
 
@@ -147,14 +186,14 @@ export class TagUsageTracker {
       const monthlyDate = now.toISOString().slice(0, 7); // YYYY-MM
 
       const dailyAggKey = this.getAggregatedUsageKey(
-        event.tenantId,
-        event.tagId,
+        fullEvent.tenantId,
+        fullEvent.tagId,
         "daily",
         dailyDate,
       );
       const monthlyAggKey = this.getAggregatedUsageKey(
-        event.tenantId,
-        event.tagId,
+        fullEvent.tenantId,
+        fullEvent.tagId,
         "monthly",
         monthlyDate,
       );
@@ -542,6 +581,139 @@ export class TagUsageTracker {
     }
 
     return stats;
+  }
+
+  /**
+   * Validate Redis vs Database consistency for monitoring
+   * Returns discrepancy information for alerting
+   */
+  async validateDataConsistency(
+    tenantId: number,
+    tagId: number,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{
+    redisUsage: number;
+    databaseUsage: number;
+    discrepancy: number;
+    discrepancyPercent: number;
+    isConsistent: boolean;
+    tolerance: number;
+  }> {
+    const tolerance = 0.001; // $0.001 tolerance for floating point precision
+
+    try {
+      // Get Redis usage via sorted set query
+      const redisResult = await this.getUsageFromSortedSet(
+        tenantId,
+        tagId,
+        "custom",
+        startDate,
+        endDate,
+      );
+      const redisUsage = redisResult?.totalUsage || 0;
+
+      // Get database usage
+      const databaseUsage = await this.getUsageFromDatabase(
+        tenantId,
+        tagId,
+        startDate,
+        endDate,
+      );
+
+      const discrepancy = Math.abs(redisUsage - databaseUsage);
+      const discrepancyPercent =
+        databaseUsage > 0 ? (discrepancy / databaseUsage) * 100 : 0;
+      const isConsistent = discrepancy <= tolerance;
+
+      if (!isConsistent) {
+        console.warn(
+          `Data consistency issue detected for tag ${tagId}: ` +
+            `Redis=${redisUsage}, Database=${databaseUsage}, ` +
+            `Discrepancy=${discrepancy} (${discrepancyPercent.toFixed(2)}%)`,
+        );
+      }
+
+      return {
+        redisUsage,
+        databaseUsage,
+        discrepancy,
+        discrepancyPercent,
+        isConsistent,
+        tolerance,
+      };
+    } catch (error) {
+      console.error("Error validating data consistency:", error);
+      return {
+        redisUsage: 0,
+        databaseUsage: 0,
+        discrepancy: 0,
+        discrepancyPercent: 0,
+        isConsistent: false,
+        tolerance,
+      };
+    }
+  }
+
+  /**
+   * Get idempotency statistics for monitoring duplicate prevention
+   */
+  async getIdempotencyStats(): Promise<{
+    totalKeys: number;
+    workerKeys: number;
+    serverKeys: number;
+    oldestKey: Date | null;
+    newestKey: Date | null;
+  }> {
+    try {
+      const workerKeys = await this.redis.keys("tag_usage_event:*");
+      const serverKeys = await this.redis.keys("tag_usage_event_fallback:*");
+
+      let oldestKey: Date | null = null;
+      let newestKey: Date | null = null;
+
+      // Sample a few keys to get age range
+      const sampleKeys = [
+        ...workerKeys.slice(0, 10),
+        ...serverKeys.slice(0, 10),
+      ];
+      for (const key of sampleKeys) {
+        try {
+          const ttl = await this.redis.ttl(key);
+          if (ttl > 0) {
+            // TTL is 24h, so creation time is roughly now - (24h - ttl)
+            const creationTime = new Date(
+              Date.now() - (24 * 60 * 60 * 1000 - ttl * 1000),
+            );
+            if (!oldestKey || creationTime < oldestKey) {
+              oldestKey = creationTime;
+            }
+            if (!newestKey || creationTime > newestKey) {
+              newestKey = creationTime;
+            }
+          }
+        } catch {
+          // Ignore individual key errors
+        }
+      }
+
+      return {
+        totalKeys: workerKeys.length + serverKeys.length,
+        workerKeys: workerKeys.length,
+        serverKeys: serverKeys.length,
+        oldestKey,
+        newestKey,
+      };
+    } catch (error) {
+      console.warn("Error getting idempotency stats:", error);
+      return {
+        totalKeys: 0,
+        workerKeys: 0,
+        serverKeys: 0,
+        oldestKey: null,
+        newestKey: null,
+      };
+    }
   }
 }
 

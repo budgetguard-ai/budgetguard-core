@@ -42,8 +42,9 @@ import {
   checkTagBudgets,
   checkHierarchicalTagBudgets,
   invalidateTagBudgetCache,
+  getOptimizedTagUsage,
 } from "./tag-budget.js";
-import { createTagUsageTracker } from "./tag-usage-tracking.js";
+// Removed: import { createTagUsageTracker } from "./tag-usage-tracking.js"; - no longer needed in server
 import { validateAndCacheTagSet, invalidateTagCache } from "./tag-cache.js";
 import {
   extractSessionHeaders,
@@ -177,6 +178,10 @@ async function extractAndValidateTags(
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
+
+  // Debug logging for tag header parsing
+  console.log(`X-Budget-Tags header: "${budgetTagsHeader}"`);
+  console.log(`Parsed tag names:`, tagNames);
 
   if (tagNames.length === 0) {
     return validatedTags;
@@ -731,43 +736,14 @@ export async function buildServer() {
       }
     }
 
-    // Redis-based tag usage tracking
-    if (validatedTags.length > 0 && usd > 0) {
-      try {
-        const tracker = createTagUsageTracker(redisClient, await getPrisma());
-        const now = new Date();
-
-        // Get tenant record for tenantId
-        const tenantRecord = await prismaClient.tenant.findUnique({
-          where: { name: tenant },
-        });
-
-        if (!tenantRecord) {
-          console.warn(`Tenant not found for tag usage tracking: ${tenant}`);
-          return payload; // Skip tag tracking for this request instead of failing
-        }
-
-        const tenantId = tenantRecord.id;
-
-        for (const tag of validatedTags) {
-          await tracker.recordTagUsage({
-            tenantId,
-            tenant,
-            tagId: tag.id,
-            tagName: tag.name,
-            usdAmount: usd,
-            weight: tag.weight,
-            timestamp: now,
-            sessionId: sess?.sessionId,
-            model,
-            route: req.routeOptions.url ?? req.url,
-          });
-        }
-      } catch (e) {
-        // log, but do not fail response
-        console.warn("Failed to record tag usage:", e);
-      }
-    }
+    // REMOVED: Redundant Redis-based tag usage tracking
+    // Tag usage is now handled exclusively by the worker processing bg_events stream
+    // This eliminates double-counting issue where same usage was recorded twice:
+    // 1. Once here immediately (server.ts)
+    // 2. Once again by worker consuming from bg_events stream
+    //
+    // Worker recording is authoritative because it has access to usageLedgerId
+    // for proper idempotency checks and database consistency.
 
     return payload;
   });
@@ -1070,6 +1046,11 @@ export async function buildServer() {
       // Extract and validate tags from X-Budget-Tags header
       let validatedTags: Array<{ id: number; name: string; weight: number }> =
         [];
+
+      // Debug logging for tag validation entry point
+      console.log(`Tag validation started for request: ${req.url}`);
+      console.log(`Headers:`, req.headers);
+
       try {
         validatedTags = await extractAndValidateTags(
           req.headers,
@@ -1077,6 +1058,10 @@ export async function buildServer() {
           prisma,
           redisClient,
         );
+
+        // Debug logging for validation result
+        console.log(`Validated tags result:`, validatedTags);
+
         // Store tags in request context for later use in onSend hook
         (req as RequestWithTags).validatedTags = validatedTags;
       } catch (error) {
@@ -1374,6 +1359,11 @@ export async function buildServer() {
       // Extract and validate tags from X-Budget-Tags header
       let validatedTags: Array<{ id: number; name: string; weight: number }> =
         [];
+
+      // Debug logging for tag validation entry point
+      console.log(`Tag validation started for request: ${req.url}`);
+      console.log(`Headers:`, req.headers);
+
       try {
         validatedTags = await extractAndValidateTags(
           req.headers,
@@ -1381,6 +1371,10 @@ export async function buildServer() {
           prisma,
           redisClient,
         );
+
+        // Debug logging for validation result
+        console.log(`Validated tags result:`, validatedTags);
+
         // Store tags in request context for later use in onSend hook
         (req as RequestWithTags).validatedTags = validatedTags;
       } catch (error) {
@@ -4964,12 +4958,56 @@ export async function buildServer() {
               : 0,
         }));
 
-        // Calculate budget health
+        // Calculate budget health using current budget periods (like enforcement logic)
         const budgetHealth = [];
         for (const tag of tags) {
           for (const budget of tag.budgets) {
-            const tagUsage = tagUsageMap.get(tag.id);
-            const usage = tagUsage ? tagUsage.usage : 0;
+            let usage = 0;
+            
+            try {
+              // Calculate usage for the actual budget period (like enforcement does)
+              if (budget.period === "daily" || budget.period === "monthly") {
+                const budgetData = await readBudget({
+                  tenant: tenant.name,
+                  period: budget.period,
+                  prisma,
+                  redis: redisClient,
+                  defaultBudget: 0,
+                });
+
+                // Use optimized tag usage tracking for current period
+                usage = await getOptimizedTagUsage(
+                  tenantIdNum,
+                  tag.id,
+                  budget.period,
+                  budgetData.startDate,
+                  budgetData.endDate,
+                  redisClient,
+                  prisma,
+                );
+              } else if (
+                budget.period === "custom" &&
+                budget.startDate &&
+                budget.endDate
+              ) {
+                // For custom periods, use the budget's defined dates
+                usage = await getOptimizedTagUsage(
+                  tenantIdNum,
+                  tag.id,
+                  budget.period,
+                  budget.startDate,
+                  budget.endDate,
+                  redisClient,
+                  prisma,
+                );
+              }
+            } catch (error) {
+              console.warn(`Error calculating budget usage for tag ${tag.name}:`, error);
+              // Fallback to tagUsageMap if budget period calculation fails
+              const tagUsage = tagUsageMap.get(tag.id);
+              usage = tagUsage ? tagUsage.usage : 0;
+            }
+
             const budgetAmount = Number(budget.amountUsd);
             const percentage =
               budgetAmount > 0 ? (usage / budgetAmount) * 100 : 0;
@@ -4977,6 +5015,11 @@ export async function buildServer() {
             let status = "healthy";
             if (percentage >= 90) status = "critical";
             else if (percentage >= 70) status = "warning";
+
+            // Debug logging for dashboard endpoint budget calculations
+            console.log(
+              `Dashboard Tag ${tag.name}: budgetPeriodUsage=${usage}, budget=${budgetAmount}, percentage=${percentage}, period=${budget.period}`,
+            );
 
             budgetHealth.push({
               tagId: tag.id,
