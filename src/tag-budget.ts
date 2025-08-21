@@ -135,8 +135,17 @@ export async function getCachedTagBudgets(
 
   try {
     const cached = await redis.get(cacheKey);
-    if (cached !== null) {
-      return JSON.parse(cached) as CachedTagBudget[];
+    if (cached !== null && cached !== "null") {
+      const parsed = JSON.parse(cached) as CachedTagBudget[];
+      // Additional safety check: ensure parsed result is an array
+      if (Array.isArray(parsed)) {
+        return parsed;
+      } else {
+        console.warn(
+          `Invalid cached data for tag ${tagId}, falling back to database:`,
+          parsed,
+        );
+      }
     }
   } catch (error) {
     console.warn("Redis error fetching tag budget config:", error);
@@ -251,6 +260,15 @@ export async function checkTagBudgets({
       redis,
       prisma,
     );
+
+    // Safety check: ensure cachedTagBudgets is an array
+    if (!cachedTagBudgets || !Array.isArray(cachedTagBudgets)) {
+      console.warn(
+        `getCachedTagBudgets returned invalid data for tag ${validatedTag.name}:`,
+        cachedTagBudgets,
+      );
+      continue; // Skip this tag
+    }
 
     for (const tagBudget of cachedTagBudgets) {
       // Calculate usage for this tag and period

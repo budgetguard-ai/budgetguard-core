@@ -92,6 +92,67 @@ function parseDateRange(
   }
 }
 
+// Helper function to extract tenant ID from request headers
+function extractTenantId(req: FastifyRequest): string {
+  return (req.headers["x-tenant-id"] as string) || "public";
+}
+
+// Helper function to log blocked requests to UsageLedger
+async function logBlockedRequest(
+  req: FastifyRequest,
+  redisClient: ReturnType<typeof createClient> | undefined,
+  status: "blocked" | "failed",
+  reason: string,
+) {
+  if (!redisClient) return;
+
+  try {
+    const tenant = extractTenantId(req);
+    const route = req.routeOptions.url ?? req.url;
+    const body = req.body as Record<string, unknown> | undefined;
+    const model = (body?.model as string) || "unknown";
+
+    // Get session ID if available
+    const sessionHeaders = extractSessionHeaders(req.headers);
+    const sessionId = sessionHeaders?.sessionId || null;
+
+    // Get validated tags if available
+    const validatedTags = (req as RequestWithTags).validatedTags || [];
+
+    const eventData: Record<string, string> = {
+      ts: Date.now().toString(),
+      tenant,
+      route,
+      model,
+      usd: "0", // Blocked requests have zero cost
+      promptTok: "0", // No tokens processed
+      compTok: "0", // No tokens generated
+      status,
+      reason,
+    };
+
+    // Add session ID if available
+    if (sessionId) {
+      eventData.sessionId = sessionId;
+    }
+
+    // Add tag information if tags are present
+    if (validatedTags.length > 0) {
+      eventData.tags = JSON.stringify(
+        validatedTags.map((tag: ValidatedTag) => ({
+          id: tag.id,
+          name: tag.name,
+          weight: tag.weight,
+        })),
+      );
+    }
+
+    await redisClient.xAdd("bg_events", "*", eventData);
+  } catch (error) {
+    console.warn("Failed to log blocked request:", error);
+  }
+}
+
 // TypeScript interfaces for type safety
 interface SessionData {
   sessionId: string;
@@ -684,15 +745,25 @@ export async function buildServer() {
 
     // Get validated tags from request context
     const validatedTags = (req as RequestWithTags).validatedTags || [];
+
+    // Get session ID from request context
+    const sessionData = (req as RequestWithSessionData)._sessionData;
+
     const eventData: Record<string, string> = {
       ts: Date.now().toString(),
-      tenant: (req.headers["x-tenant-id"] as string) || "public",
+      tenant: extractTenantId(req),
       route: req.routeOptions.url ?? req.url,
       model: model || "unknown",
       usd: usd.toFixed(6),
       promptTok: promptTok.toString(),
       compTok: compTok.toString(),
+      status: "success", // Mark successful requests
     };
+
+    // Add session ID if available
+    if (sessionData?.sessionId) {
+      eventData.sessionId = sessionData.sessionId;
+    }
 
     // Add tag information if tags are present
     if (validatedTags.length > 0) {
@@ -706,7 +777,7 @@ export async function buildServer() {
     }
 
     await redisClient.xAdd("bg_events", "*", eventData);
-    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    const tenant = extractTenantId(req);
     const prismaClient = await getPrisma();
     for (const period of BUDGET_PERIODS) {
       const { startDate, endDate } = await readBudget({
@@ -764,7 +835,7 @@ export async function buildServer() {
     {
       client: redisClient,
       max: async (req: FastifyRequest) => {
-        const tenant = (req.headers["x-tenant-id"] as string) || "public";
+        const tenant = extractTenantId(req);
 
         // Check in-memory cache first
         const cached = rateLimitCache.get(tenant);
@@ -793,8 +864,7 @@ export async function buildServer() {
         return limit === 0 ? Number.MAX_SAFE_INTEGER : limit;
       },
       timeWindow: "1 minute",
-      keyGenerator: (req: FastifyRequest) =>
-        (req.headers["x-tenant-id"] as string) || "public",
+      keyGenerator: (req: FastifyRequest) => extractTenantId(req),
       allowList: (req: FastifyRequest) => {
         // Allow admin endpoints, dashboard, docs, and health
         const url = req.url;
@@ -1011,6 +1081,12 @@ export async function buildServer() {
 
       // Require authentication for all AI proxy requests
       if (!supplied) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          "Authentication required",
+        );
         return reply.code(401).send({
           error:
             "Authentication required. Provide API key via Authorization header or X-API-Key header",
@@ -1020,6 +1096,7 @@ export async function buildServer() {
       // Authenticate and get tenant context
       const keyAuth = await authenticateApiKey(supplied, prisma);
       if (!keyAuth) {
+        await logBlockedRequest(req, redisClient, "failed", "Invalid API key");
         return reply.code(401).send({ error: "Invalid API key" });
       }
 
@@ -1027,6 +1104,7 @@ export async function buildServer() {
         where: { id: keyAuth.tenantId },
       });
       if (!tenantRec) {
+        await logBlockedRequest(req, redisClient, "failed", "Tenant not found");
         return reply.code(401).send({ error: "Tenant not found" });
       }
 
@@ -1067,6 +1145,12 @@ export async function buildServer() {
         // Store tags in request context for later use in onSend hook
         (req as RequestWithTags).validatedTags = validatedTags;
       } catch (error) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          error instanceof Error ? error.message : "Tag validation failed",
+        );
         return reply.code(400).send({
           error:
             error instanceof Error ? error.message : "Tag validation failed",
@@ -1094,6 +1178,12 @@ export async function buildServer() {
           sessionData.sessionId,
           prisma,
           redisClient,
+        );
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "blocked",
+          "Session budget exceeded",
         );
         return reply.code(402).send({ error: "Session budget exceeded" });
       }
@@ -1124,6 +1214,12 @@ export async function buildServer() {
           app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
         }
         app.log.warn({ decisionMs }, "policy denied");
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "blocked",
+          "Request denied by policy",
+        );
         return reply.code(403).send({ error: "Request denied by policy" });
       }
       for (const b of budgets) {
@@ -1136,6 +1232,12 @@ export async function buildServer() {
             budget: b.budget,
             decisionMs,
           });
+          await logBlockedRequest(
+            req,
+            redisClient,
+            "blocked",
+            "Budget exceeded",
+          );
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
@@ -1168,6 +1270,12 @@ export async function buildServer() {
               })),
               decisionMs,
             });
+            await logBlockedRequest(
+              req,
+              redisClient,
+              "blocked",
+              `Tag budget exceeded: ${exceededTagBudgets.map((check) => check.tagName).join(", ")}`,
+            );
             return reply.code(402).send({
               error: `Tag budget exceeded: ${exceededTagBudgets
                 .map((check) => check.tagName)
@@ -1202,6 +1310,12 @@ export async function buildServer() {
               ),
               decisionMs,
             });
+            await logBlockedRequest(
+              req,
+              redisClient,
+              "blocked",
+              `Parent tag budget exceeded: ${exceededHierarchicalBudgets.map((check) => check.tagName).join(", ")}`,
+            );
             return reply.code(402).send({
               error: `Parent tag budget exceeded: ${exceededHierarchicalBudgets
                 .map((check) => check.tagName)
@@ -1232,6 +1346,12 @@ export async function buildServer() {
       });
 
       if (!provider) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          `No provider configured for model: ${model}`,
+        );
         return reply
           .code(400)
           .send({ error: `No provider configured for model: ${model}` });
@@ -1324,6 +1444,12 @@ export async function buildServer() {
 
       // Require authentication for all AI proxy requests
       if (!supplied) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          "Authentication required",
+        );
         return reply.code(401).send({
           error:
             "Authentication required. Provide API key via Authorization header or X-API-Key header",
@@ -1333,6 +1459,7 @@ export async function buildServer() {
       // Authenticate and get tenant context
       const keyAuth = await authenticateApiKey(supplied, prisma);
       if (!keyAuth) {
+        await logBlockedRequest(req, redisClient, "failed", "Invalid API key");
         return reply.code(401).send({ error: "Invalid API key" });
       }
 
@@ -1340,6 +1467,7 @@ export async function buildServer() {
         where: { id: keyAuth.tenantId },
       });
       if (!tenantRec) {
+        await logBlockedRequest(req, redisClient, "failed", "Tenant not found");
         return reply.code(401).send({ error: "Tenant not found" });
       }
 
@@ -1380,6 +1508,12 @@ export async function buildServer() {
         // Store tags in request context for later use in onSend hook
         (req as RequestWithTags).validatedTags = validatedTags;
       } catch (error) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          error instanceof Error ? error.message : "Tag validation failed",
+        );
         return reply.code(400).send({
           error:
             error instanceof Error ? error.message : "Tag validation failed",
@@ -1407,6 +1541,12 @@ export async function buildServer() {
           sessionData.sessionId,
           prisma,
           redisClient,
+        );
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "blocked",
+          "Session budget exceeded",
         );
         return reply.code(402).send({ error: "Session budget exceeded" });
       }
@@ -1437,6 +1577,12 @@ export async function buildServer() {
           app.log.warn({ period: b.period, usage: b.usage, budget: b.budget });
         }
         app.log.warn({ decisionMs }, "policy denied");
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "blocked",
+          "Request denied by policy",
+        );
         return reply.code(403).send({ error: "Request denied by policy" });
       }
       for (const b of budgets) {
@@ -1449,6 +1595,12 @@ export async function buildServer() {
             budget: b.budget,
             decisionMs,
           });
+          await logBlockedRequest(
+            req,
+            redisClient,
+            "blocked",
+            "Budget exceeded",
+          );
           return reply.code(402).send({ error: "Budget exceeded" });
         }
       }
@@ -1481,6 +1633,12 @@ export async function buildServer() {
               })),
               decisionMs,
             });
+            await logBlockedRequest(
+              req,
+              redisClient,
+              "blocked",
+              `Tag budget exceeded: ${exceededTagBudgets.map((check) => check.tagName).join(", ")}`,
+            );
             return reply.code(402).send({
               error: `Tag budget exceeded: ${exceededTagBudgets
                 .map((check) => check.tagName)
@@ -1515,6 +1673,12 @@ export async function buildServer() {
               ),
               decisionMs,
             });
+            await logBlockedRequest(
+              req,
+              redisClient,
+              "blocked",
+              `Parent tag budget exceeded: ${exceededHierarchicalBudgets.map((check) => check.tagName).join(", ")}`,
+            );
             return reply.code(402).send({
               error: `Parent tag budget exceeded: ${exceededHierarchicalBudgets
                 .map((check) => check.tagName)
@@ -1545,6 +1709,12 @@ export async function buildServer() {
       });
 
       if (!provider) {
+        await logBlockedRequest(
+          req,
+          redisClient,
+          "failed",
+          `No provider configured for model: ${model}`,
+        );
         return reply
           .code(400)
           .send({ error: `No provider configured for model: ${model}` });
@@ -2777,6 +2947,7 @@ export async function buildServer() {
             route: { type: "string" },
             startDate: { type: "string" },
             endDate: { type: "string" },
+            status: { type: "string", enum: ["success", "blocked", "failed"] },
           },
         },
         response: {
@@ -2797,6 +2968,20 @@ export async function buildServer() {
                     promptTok: { type: "number" },
                     compTok: { type: "number" },
                     tenantId: { type: "number" },
+                    sessionId: { type: ["string", "null"] },
+                    status: { type: "string" },
+                    tags: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "number" },
+                          name: { type: "string" },
+                          path: { type: ["string", "null"] },
+                          weight: { type: "number" },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -2826,6 +3011,7 @@ export async function buildServer() {
         route,
         startDate,
         endDate,
+        status,
       } = request.query as {
         days?: number;
         page?: number;
@@ -2834,6 +3020,7 @@ export async function buildServer() {
         route?: string;
         startDate?: string;
         endDate?: string;
+        status?: string;
       };
 
       const id = parseInt(tenantId);
@@ -2880,6 +3067,10 @@ export async function buildServer() {
         };
       }
 
+      if (status) {
+        where.status = status;
+      }
+
       try {
         const prismaClient = await getPrisma();
 
@@ -2894,6 +3085,11 @@ export async function buildServer() {
           take: limit,
           include: {
             tenantRef: true,
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         });
 
@@ -2908,6 +3104,14 @@ export async function buildServer() {
             promptTok: entry.promptTok,
             compTok: entry.compTok,
             tenantId: entry.tenantId,
+            sessionId: entry.sessionId,
+            status: entry.status,
+            tags: entry.tags.map((tagRef) => ({
+              id: tagRef.tag.id,
+              name: tagRef.tag.name,
+              path: tagRef.tag.path,
+              weight: tagRef.weight,
+            })),
           })),
           total,
           page,
@@ -2946,6 +3150,7 @@ export async function buildServer() {
             tenantId: { type: "number" },
             startDate: { type: "string" },
             endDate: { type: "string" },
+            status: { type: "string", enum: ["success", "blocked", "failed"] },
           },
         },
         response: {
@@ -2966,6 +3171,20 @@ export async function buildServer() {
                     promptTok: { type: "number" },
                     compTok: { type: "number" },
                     tenantId: { type: "number" },
+                    sessionId: { type: ["string", "null"] },
+                    status: { type: "string" },
+                    tags: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "number" },
+                          name: { type: "string" },
+                          path: { type: ["string", "null"] },
+                          weight: { type: "number" },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -2996,6 +3215,7 @@ export async function buildServer() {
         tenantId,
         startDate,
         endDate,
+        status,
       } = request.query as {
         days?: number;
         page?: number;
@@ -3006,6 +3226,7 @@ export async function buildServer() {
         tenantId?: number;
         startDate?: string;
         endDate?: string;
+        status?: string;
       };
 
       // Build date filter
@@ -3057,6 +3278,10 @@ export async function buildServer() {
         };
       }
 
+      if (status) {
+        where.status = status;
+      }
+
       try {
         const prismaClient = await getPrisma();
 
@@ -3071,6 +3296,11 @@ export async function buildServer() {
           take: limit,
           include: {
             tenantRef: true,
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         });
 
@@ -3085,6 +3315,14 @@ export async function buildServer() {
             promptTok: entry.promptTok,
             compTok: entry.compTok,
             tenantId: entry.tenantId,
+            sessionId: entry.sessionId,
+            status: entry.status,
+            tags: entry.tags.map((tagRef) => ({
+              id: tagRef.tag.id,
+              name: tagRef.tag.name,
+              path: tagRef.tag.path,
+              weight: tagRef.weight,
+            })),
           })),
           total,
           page,

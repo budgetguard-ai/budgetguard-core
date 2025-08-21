@@ -278,11 +278,7 @@ describe("Tag Usage Tracking", () => {
 
   describe("batchQueryTagUsage", () => {
     it("should perform batch query efficiently", async () => {
-      mockPipeline.exec.mockResolvedValue([
-        [null, "0.10"],
-        [null, "0.15"],
-        [null, null],
-      ]);
+      mockPipeline.exec.mockResolvedValue(["0.10", "0.15", null]);
 
       const results = await tracker.batchQueryTagUsage(
         1,

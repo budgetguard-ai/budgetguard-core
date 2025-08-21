@@ -214,6 +214,7 @@ class ApiClient {
       route?: string;
       startDate?: string;
       endDate?: string;
+      status?: "success" | "blocked" | "failed";
     },
   ): Promise<{
     data: Array<{
@@ -226,6 +227,14 @@ class ApiClient {
       promptTok: number;
       compTok: number;
       tenantId: number;
+      sessionId: string | null;
+      status: "success" | "blocked" | "failed";
+      tags: Array<{
+        id: number;
+        name: string;
+        path: string | null;
+        weight: number;
+      }>;
     }>;
     total: number;
     page: number;
@@ -239,6 +248,7 @@ class ApiClient {
     if (params?.route) queryParams.append("route", params.route);
     if (params?.startDate) queryParams.append("startDate", params.startDate);
     if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.status) queryParams.append("status", params.status);
 
     const queryString = queryParams.toString();
     const url = `/admin/tenant/${tenantId}/usage/ledger${queryString ? `?${queryString}` : ""}`;
@@ -256,6 +266,7 @@ class ApiClient {
     tenantId?: number;
     startDate?: string;
     endDate?: string;
+    status?: "success" | "blocked" | "failed";
   }): Promise<{
     data: Array<{
       id: string;
@@ -267,6 +278,14 @@ class ApiClient {
       promptTok: number;
       compTok: number;
       tenantId: number;
+      sessionId: string | null;
+      status: "success" | "blocked" | "failed";
+      tags: Array<{
+        id: number;
+        name: string;
+        path: string | null;
+        weight: number;
+      }>;
     }>;
     total: number;
     page: number;
@@ -283,6 +302,7 @@ class ApiClient {
       queryParams.append("tenantId", params.tenantId.toString());
     if (params?.startDate) queryParams.append("startDate", params.startDate);
     if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.status) queryParams.append("status", params.status);
 
     const queryString = queryParams.toString();
     const url = `/admin/usage/ledger${queryString ? `?${queryString}` : ""}`;

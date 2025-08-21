@@ -356,14 +356,12 @@ export class TagUsageTracker {
 
       if (results) {
         for (let i = 0; i < tagIds.length; i++) {
-          const pipelineResult = results[i];
-          if (Array.isArray(pipelineResult) && pipelineResult.length === 2) {
-            const [error, usage] = pipelineResult as unknown as [
-              Error | null,
-              string | null,
-            ];
-            if (!error && usage !== null) {
+          const usage = results[i];
+          if (usage !== null && usage !== undefined) {
+            if (typeof usage === "string") {
               result[tagIds[i]] = parseFloat(usage);
+            } else if (typeof usage === "number") {
+              result[tagIds[i]] = usage;
             } else {
               result[tagIds[i]] = 0;
             }

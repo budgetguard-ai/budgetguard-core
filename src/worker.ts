@@ -49,6 +49,8 @@ async function main() {
           usd: data.usd,
           promptTok: Number(data.promptTok),
           compTok: Number(data.compTok),
+          sessionId: data.sessionId || null,
+          status: data.status || "success", // Default to success for backward compatibility
         },
       });
 
