@@ -358,7 +358,11 @@ export class TagUsageTracker {
         for (let i = 0; i < tagIds.length; i++) {
           const usage = results[i];
           if (usage !== null && usage !== undefined) {
-            result[tagIds[i]] = parseFloat(usage as unknown as string);
+            if (typeof usage === "string" || typeof usage === "number") {
+              result[tagIds[i]] = parseFloat(usage.toString());
+            } else {
+              result[tagIds[i]] = 0;
+            }
           } else {
             result[tagIds[i]] = 0;
           }

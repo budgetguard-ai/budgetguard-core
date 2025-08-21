@@ -92,6 +92,11 @@ function parseDateRange(
   }
 }
 
+// Helper function to extract tenant ID from request headers
+function extractTenantId(req: FastifyRequest): string {
+  return (req.headers["x-tenant-id"] as string) || "public";
+}
+
 // Helper function to log blocked requests to UsageLedger
 async function logBlockedRequest(
   req: FastifyRequest,
@@ -102,7 +107,7 @@ async function logBlockedRequest(
   if (!redisClient) return;
 
   try {
-    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    const tenant = extractTenantId(req);
     const route = req.routeOptions.url ?? req.url;
     const body = req.body as Record<string, unknown> | undefined;
     const model = (body?.model as string) || "unknown";
@@ -746,7 +751,7 @@ export async function buildServer() {
 
     const eventData: Record<string, string> = {
       ts: Date.now().toString(),
-      tenant: (req.headers["x-tenant-id"] as string) || "public",
+      tenant: extractTenantId(req),
       route: req.routeOptions.url ?? req.url,
       model: model || "unknown",
       usd: usd.toFixed(6),
@@ -772,7 +777,7 @@ export async function buildServer() {
     }
 
     await redisClient.xAdd("bg_events", "*", eventData);
-    const tenant = (req.headers["x-tenant-id"] as string) || "public";
+    const tenant = extractTenantId(req);
     const prismaClient = await getPrisma();
     for (const period of BUDGET_PERIODS) {
       const { startDate, endDate } = await readBudget({
@@ -830,7 +835,7 @@ export async function buildServer() {
     {
       client: redisClient,
       max: async (req: FastifyRequest) => {
-        const tenant = (req.headers["x-tenant-id"] as string) || "public";
+        const tenant = extractTenantId(req);
 
         // Check in-memory cache first
         const cached = rateLimitCache.get(tenant);
@@ -859,8 +864,7 @@ export async function buildServer() {
         return limit === 0 ? Number.MAX_SAFE_INTEGER : limit;
       },
       timeWindow: "1 minute",
-      keyGenerator: (req: FastifyRequest) =>
-        (req.headers["x-tenant-id"] as string) || "public",
+      keyGenerator: (req: FastifyRequest) => extractTenantId(req),
       allowList: (req: FastifyRequest) => {
         // Allow admin endpoints, dashboard, docs, and health
         const url = req.url;
