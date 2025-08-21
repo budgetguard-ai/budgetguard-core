@@ -179,9 +179,11 @@ async function extractAndValidateTags(
     .map((name) => name.trim())
     .filter(Boolean);
 
-  // Debug logging for tag header parsing
-  console.log(`X-Budget-Tags header: "${budgetTagsHeader}"`);
-  console.log(`Parsed tag names:`, tagNames);
+  // Debug logging for tag header parsing (development only)
+  if (process.env.NODE_ENV === "development") {
+    console.log(`X-Budget-Tags header: "${budgetTagsHeader}"`);
+    console.log(`Parsed tag names:`, tagNames);
+  }
 
   if (tagNames.length === 0) {
     return validatedTags;

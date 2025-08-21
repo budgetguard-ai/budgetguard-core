@@ -175,9 +175,10 @@ export async function readSessionTagDataOptimized(
     params.tagUsagePeriods?.length &&
     params.tenantName
   ) {
+    const todayStr = new Date().toISOString().slice(0, 10);
     params.tagIds.forEach((tagId) => {
       params.tagUsagePeriods?.forEach((period) => {
-        const tagUsageKey = `tag_usage:${params.tenantName}:${tagId}:${period}:${new Date().toISOString().slice(0, 10)}`;
+        const tagUsageKey = `tag_usage:${params.tenantName}:${tagId}:${period}:${todayStr}`;
         cacheKeys.push(tagUsageKey);
         keyMap[`tagUsage_${tagId}_${period}`] = keyIndex++;
       });

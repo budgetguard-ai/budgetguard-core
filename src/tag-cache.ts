@@ -126,10 +126,12 @@ export async function validateAndCacheTagSet(
         weight: 1.0, // Default weight
       };
 
-      // Debug logging for validated tag weight
-      console.log(
-        `ValidatedTag creation: ${tag.name} -> weight=${validatedTag.weight}`,
-      );
+      // Debug logging for validated tag weight (development only)
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          `ValidatedTag creation: ${tag.name} -> weight=${validatedTag.weight}`,
+        );
+      }
 
       validatedTags.push(validatedTag);
       foundTagNames.push(tag.name);

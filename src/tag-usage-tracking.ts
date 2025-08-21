@@ -90,9 +90,20 @@ export class TagUsageTracker {
       // Primary idempotency key for worker-processed events
       idemKey = `tag_usage_event:${fullEvent.usageLedgerId}:${fullEvent.tagId}`;
     } else {
-      // Fallback idempotency key for immediate server events (timestamp + session + tag)
-      const fallbackKey = `${fullEvent.timestamp.getTime()}:${fullEvent.sessionId || "nosession"}:${fullEvent.tagId}:${fullEvent.tenantId}`;
-      idemKey = `tag_usage_event_fallback:${fallbackKey}`;
+      // Fallback idempotency key for immediate server events (using hash to avoid delimiter collisions)
+      const fallbackKeyObj = {
+        timestamp: fullEvent.timestamp.getTime(),
+        sessionId: fullEvent.sessionId || "nosession",
+        tagId: fullEvent.tagId,
+        tenantId: fullEvent.tenantId,
+      };
+      const fallbackKeyStr = JSON.stringify(fallbackKeyObj);
+      const crypto = await import("crypto");
+      const fallbackKeyHash = crypto
+        .createHash("sha256")
+        .update(fallbackKeyStr)
+        .digest("hex");
+      idemKey = `tag_usage_event_fallback:${fallbackKeyHash}`;
     }
 
     // NX means set only if not exists; PX sets a TTL (24h here – tune as needed)
@@ -101,17 +112,19 @@ export class TagUsageTracker {
       PX: 24 * 60 * 60 * 1000,
     });
     if (setResult === null) {
-      // Enhanced debug logging
-      console.debug?.(
-        {
-          usageLedgerId: fullEvent.usageLedgerId,
-          tagId: fullEvent.tagId,
-          sessionId: fullEvent.sessionId,
-          idemKey: idemKey,
-          source: fullEvent.usageLedgerId ? "worker" : "server",
-        },
-        "Duplicate tag usage event ignored",
-      );
+      // Enhanced debug logging (only in development)
+      if (process.env.NODE_ENV === "development") {
+        console.debug(
+          {
+            usageLedgerId: fullEvent.usageLedgerId,
+            tagId: fullEvent.tagId,
+            sessionId: fullEvent.sessionId,
+            idemKey: idemKey,
+            source: fullEvent.usageLedgerId ? "worker" : "server",
+          },
+          "Duplicate tag usage event ignored",
+        );
+      }
       return; // Duplicate detected; abort before any increments
     }
 
