@@ -49,10 +49,12 @@ const headCells: HeadCell[] = [
   { id: "tenant", label: "Tenant", numeric: false, sortable: true },
   { id: "route", label: "Route", numeric: false, sortable: false },
   { id: "model", label: "Model", numeric: false, sortable: true },
-  { id: "promptTok", label: "Input Tokens", numeric: true, sortable: true },
-  { id: "compTok", label: "Output Tokens", numeric: true, sortable: true },
-  { id: "usd", label: "Cost (USD)", numeric: true, sortable: true },
-  // Do not add any id here that does not exist on UsageLedger
+  { id: "sessionId", label: "Session", numeric: false, sortable: false },
+  { id: "status", label: "Status", numeric: false, sortable: true },
+  { id: "promptTok", label: "Input", numeric: true, sortable: true },
+  { id: "compTok", label: "Output", numeric: true, sortable: true },
+  { id: "usd", label: "Cost", numeric: true, sortable: true },
+  { id: "tags", label: "Tags", numeric: false, sortable: false },
 ];
 
 const UsageTracking: React.FC = () => {
@@ -67,6 +69,7 @@ const UsageTracking: React.FC = () => {
     tenant: "",
     route: "",
     model: "",
+    status: "" as "" | "success" | "blocked" | "failed",
     startDate: null as Date | null,
     endDate: null as Date | null,
     minCost: "",
@@ -83,6 +86,7 @@ const UsageTracking: React.FC = () => {
     if (filters.tenant) params.tenant = filters.tenant;
     if (filters.route) params.route = filters.route;
     if (filters.model) params.model = filters.model;
+    if (filters.status) params.status = filters.status;
     if (filters.startDate)
       params.startDate = filters.startDate.toISOString().split("T")[0];
     if (filters.endDate)
@@ -125,6 +129,7 @@ const UsageTracking: React.FC = () => {
       tenant: "",
       route: "",
       model: "",
+      status: "" as const,
       startDate: null,
       endDate: null,
       minCost: "",
@@ -142,9 +147,12 @@ const UsageTracking: React.FC = () => {
         "Tenant",
         "Route",
         "Model",
+        "Session ID",
+        "Status",
         "Input Tokens",
         "Output Tokens",
         "Cost (USD)",
+        "Tags",
       ],
       ...data.map((row) => [
         new Date(row.ts).toLocaleDateString(),
@@ -152,9 +160,12 @@ const UsageTracking: React.FC = () => {
         row.tenant,
         row.route,
         row.model,
+        row.sessionId || "",
+        row.status,
         row.promptTok.toString(),
         row.compTok.toString(),
         `$${parseFloat(row.usd)}`,
+        row.tags.map((tag) => tag.name).join("; "),
       ]),
     ]
       .map((row) => row.join(","))
@@ -283,8 +294,8 @@ const UsageTracking: React.FC = () => {
             <Box
               sx={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: 2,
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: 1.5,
               }}
             >
               <TextField
@@ -317,6 +328,20 @@ const UsageTracking: React.FC = () => {
                 size="small"
                 placeholder="Search models..."
               />
+
+              <FormControl size="small">
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={filters.status}
+                  label="Status"
+                  onChange={(e) => handleFilterChange("status", e.target.value)}
+                >
+                  <MenuItem value="">All Status</MenuItem>
+                  <MenuItem value="success">Success</MenuItem>
+                  <MenuItem value="blocked">Blocked</MenuItem>
+                  <MenuItem value="failed">Failed</MenuItem>
+                </Select>
+              </FormControl>
 
               <DatePicker
                 label="Start Date"
@@ -374,8 +399,8 @@ const UsageTracking: React.FC = () => {
               </Box>
             ) : (
               <>
-                <TableContainer>
-                  <Table>
+                <TableContainer sx={{ overflowX: "auto" }}>
+                  <Table size="small">
                     <TableHead>
                       <TableRow>
                         {headCells.map((headCell) => (
@@ -385,6 +410,7 @@ const UsageTracking: React.FC = () => {
                             sortDirection={
                               orderBy === headCell.id ? order : false
                             }
+                            sx={{ py: 1, fontWeight: 600 }}
                           >
                             {headCell.sortable ? (
                               <TableSortLabel
@@ -394,10 +420,20 @@ const UsageTracking: React.FC = () => {
                                 }
                                 onClick={() => handleRequestSort(headCell.id)}
                               >
-                                {headCell.label}
+                                <Typography
+                                  variant="caption"
+                                  sx={{ fontWeight: 600 }}
+                                >
+                                  {headCell.label}
+                                </Typography>
                               </TableSortLabel>
                             ) : (
-                              headCell.label
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 600 }}
+                              >
+                                {headCell.label}
+                              </Typography>
                             )}
                           </TableCell>
                         ))}
@@ -406,21 +442,29 @@ const UsageTracking: React.FC = () => {
                     <TableBody>
                       {clientFilteredData.map((row) => (
                         <TableRow key={row.id} hover>
-                          <TableCell>
-                            {new Date(row.ts).toLocaleString()}
+                          <TableCell sx={{ py: 1.5 }}>
+                            <Typography variant="caption" component="div">
+                              {new Date(row.ts).toLocaleDateString()}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {new Date(row.ts).toLocaleTimeString()}
+                            </Typography>
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 1.5 }}>
                             <Chip label={row.tenant} size="small" />
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 1.5 }}>
                             <Typography
-                              variant="body2"
+                              variant="caption"
                               sx={{ fontFamily: "monospace" }}
                             >
                               {row.route}
                             </Typography>
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 1.5 }}>
                             <Chip
                               label={row.model}
                               size="small"
@@ -428,19 +472,109 @@ const UsageTracking: React.FC = () => {
                               variant="outlined"
                             />
                           </TableCell>
-                          <TableCell align="right">
-                            {row.promptTok.toLocaleString()}
+                          <TableCell sx={{ py: 1.5, maxWidth: 120 }}>
+                            {row.sessionId ? (
+                              <Tooltip title={row.sessionId}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontFamily: "monospace",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    display: "block",
+                                  }}
+                                >
+                                  {row.sessionId.slice(0, 8)}...
+                                </Typography>
+                              </Tooltip>
+                            ) : (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                -
+                              </Typography>
+                            )}
                           </TableCell>
-                          <TableCell align="right">
-                            {row.compTok.toLocaleString()}
+                          <TableCell sx={{ py: 1.5 }}>
+                            <Chip
+                              label={row.status}
+                              size="small"
+                              color={
+                                row.status === "success"
+                                  ? "success"
+                                  : row.status === "blocked"
+                                    ? "warning"
+                                    : "error"
+                              }
+                              variant="outlined"
+                            />
                           </TableCell>
-                          <TableCell align="right">
+                          <TableCell align="right" sx={{ py: 1.5 }}>
+                            <Typography variant="caption">
+                              {row.promptTok.toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" sx={{ py: 1.5 }}>
+                            <Typography variant="caption">
+                              {row.compTok.toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" sx={{ py: 1.5 }}>
                             <Typography
-                              variant="body2"
+                              variant="caption"
                               sx={{ fontWeight: 600 }}
                             >
-                              ${parseFloat(row.usd)}
+                              ${parseFloat(row.usd).toFixed(4)}
                             </Typography>
+                          </TableCell>
+                          <TableCell sx={{ py: 1.5, maxWidth: 150 }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 0.5,
+                              }}
+                            >
+                              {row.tags.length > 0 ? (
+                                row.tags
+                                  .slice(0, 2)
+                                  .map((tag) => (
+                                    <Chip
+                                      key={tag.id}
+                                      label={tag.name}
+                                      size="small"
+                                      variant="outlined"
+                                      color="secondary"
+                                      sx={{ fontSize: "0.65rem", height: 20 }}
+                                    />
+                                  ))
+                              ) : (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  -
+                                </Typography>
+                              )}
+                              {row.tags.length > 2 && (
+                                <Tooltip
+                                  title={row.tags
+                                    .slice(2)
+                                    .map((tag) => tag.name)
+                                    .join(", ")}
+                                >
+                                  <Chip
+                                    label={`+${row.tags.length - 2}`}
+                                    size="small"
+                                    variant="outlined"
+                                    color="secondary"
+                                    sx={{ fontSize: "0.65rem", height: 20 }}
+                                  />
+                                </Tooltip>
+                              )}
+                            </Box>
                           </TableCell>
                         </TableRow>
                       ))}
