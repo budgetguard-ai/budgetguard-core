@@ -163,25 +163,25 @@ async function extractAndValidateTags(
   redis?: ReturnType<typeof createClient>,
 ): Promise<Array<{ id: number; name: string; weight: number }>> {
   const validatedTags: Array<{ id: number; name: string; weight: number }> = [];
-  const budgetTagsHeaderRaw = headers["x-budget-tags"];
+  const tagsHeaderRaw = headers["x-tags"];
 
   // Handle array headers by taking the first element, or convert to string
-  const budgetTagsHeader = Array.isArray(budgetTagsHeaderRaw)
-    ? budgetTagsHeaderRaw[0]
-    : budgetTagsHeaderRaw;
+  const tagsHeader = Array.isArray(tagsHeaderRaw)
+    ? tagsHeaderRaw[0]
+    : tagsHeaderRaw;
 
-  if (!budgetTagsHeader || typeof budgetTagsHeader !== "string") {
+  if (!tagsHeader || typeof tagsHeader !== "string") {
     return validatedTags;
   }
 
-  const tagNames = budgetTagsHeader
+  const tagNames = tagsHeader
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
 
   // Debug logging for tag header parsing (development only)
   if (process.env.NODE_ENV === "development") {
-    console.log(`X-Budget-Tags header: "${budgetTagsHeader}"`);
+    console.log(`X-Tags header: "${tagsHeader}"`);
     console.log(`Parsed tag names:`, tagNames);
   }
 
@@ -987,7 +987,7 @@ export async function buildServer() {
           },
           {
             in: "header",
-            name: "X-Budget-Tags",
+            name: "X-Tags",
             schema: { type: "string" },
             required: false,
             description:
@@ -1045,7 +1045,7 @@ export async function buildServer() {
           },
         })
         .catch(() => {});
-      // Extract and validate tags from X-Budget-Tags header
+      // Extract and validate tags from X-Tags header
       let validatedTags: Array<{ id: number; name: string; weight: number }> =
         [];
 
@@ -1300,7 +1300,7 @@ export async function buildServer() {
           },
           {
             in: "header",
-            name: "X-Budget-Tags",
+            name: "X-Tags",
             schema: { type: "string" },
             required: false,
             description:
@@ -1358,7 +1358,7 @@ export async function buildServer() {
           },
         })
         .catch(() => {});
-      // Extract and validate tags from X-Budget-Tags header
+      // Extract and validate tags from X-Tags header
       let validatedTags: Array<{ id: number; name: string; weight: number }> =
         [];
 

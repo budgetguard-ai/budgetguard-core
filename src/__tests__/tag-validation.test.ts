@@ -115,7 +115,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "" },
+        { "x-tags": "" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -139,7 +139,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering" },
+        { "x-tags": "engineering" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -175,7 +175,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering,frontend,backend" },
+        { "x-tags": "engineering,frontend,backend" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -202,7 +202,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": " engineering , production " },
+        { "x-tags": " engineering , production " },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -228,7 +228,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering,,," },
+        { "x-tags": "engineering,,," },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -252,7 +252,7 @@ describe("Tag Validation System", () => {
 
       await expect(
         extractAndValidateTags(
-          { "x-budget-tags": "engineering,missing-tag" },
+          { "x-tags": "engineering,missing-tag" },
           1,
           mockPrisma,
           mockRedis as RedisClientType,
@@ -273,7 +273,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering,marketing" },
+        { "x-tags": "engineering,marketing" },
         2, // Different tenant
         mockPrisma,
         mockRedis as RedisClientType,
@@ -313,7 +313,7 @@ describe("Tag Validation System", () => {
       // Try to use tenant 1's tags while authenticated as tenant 2
       await expect(
         extractAndValidateTags(
-          { "x-budget-tags": "frontend,backend" }, // These exist for tenant 1
+          { "x-tags": "frontend,backend" }, // These exist for tenant 1
           2, // But we're authenticated as tenant 2
           mockPrisma,
           mockRedis as RedisClientType,
@@ -335,7 +335,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering,production" },
+        { "x-tags": "engineering,production" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -358,7 +358,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       await extractAndValidateTags(
-        { "x-budget-tags": "engineering,production" },
+        { "x-tags": "engineering,production" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -379,7 +379,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering" },
+        { "x-tags": "engineering" },
         1,
         mockPrisma,
         undefined, // No Redis client
@@ -399,7 +399,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": "engineering" },
+        { "x-tags": "engineering" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -415,21 +415,21 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result1 = await extractAndValidateTags(
-        { "x-budget-tags": "" },
+        { "x-tags": "" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
       );
 
       const result2 = await extractAndValidateTags(
-        { "X-Budget-Tags": "" },
+        { "X-Tags": "" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
       );
 
       const result3 = await extractAndValidateTags(
-        { "X-BUDGET-TAGS": "" },
+        { "X-TAGS": "" },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -450,7 +450,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": ["engineering,production"] }, // Array with first element as comma-separated string
+        { "x-tags": ["engineering,production"] }, // Array with first element as comma-separated string
         1,
         mockPrisma,
         mockRedis as RedisClientType,
@@ -465,7 +465,7 @@ describe("Tag Validation System", () => {
       const { extractAndValidateTags } = await import("../server.js");
 
       const result = await extractAndValidateTags(
-        { "x-budget-tags": undefined },
+        { "x-tags": undefined },
         1,
         mockPrisma,
         mockRedis as RedisClientType,
