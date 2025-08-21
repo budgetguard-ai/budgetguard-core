@@ -18,10 +18,14 @@ model UsageLedger {
   promptTok Int
   compTok   Int
   tenantId  Int?
+  sessionId String?  // Session ID for request tracking
+  status    String   @default("success") // success, blocked, failed
   tenantRef Tenant?     @relation(fields: [tenantId], references: [id])
   tags      RequestTag[]
 
   @@index([tenantId])
+  @@index([status])
+  @@index([sessionId])
 }
 
 model Tenant {
