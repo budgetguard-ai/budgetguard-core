@@ -14,7 +14,7 @@ import {
   TooltipItem,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import { Box, Typography, Card, CardContent } from "@mui/material";
+import { Box, Typography, Card, CardContent, useTheme } from "@mui/material";
 
 ChartJS.register(
   CategoryScale,
@@ -46,6 +46,7 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
   title = "Budget vs Usage",
   height = 400,
 }) => {
+  const theme = useTheme();
   const chartData = {
     labels: data.labels,
     datasets: [
@@ -74,8 +75,23 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
     ],
   };
 
+  const textColor = theme.palette.mode === "dark" ? "#FFFFFF" : "#000000";
+  const gridColor =
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.1)"
+      : "rgba(0, 0, 0, 0.1)";
+
   const options = {
     responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 10,
+        right: 10,
+        bottom: 10,
+        left: 10,
+      },
+    },
     interaction: {
       mode: "index" as const,
       intersect: false,
@@ -83,6 +99,9 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
     plugins: {
       legend: {
         position: "top" as const,
+        labels: {
+          color: textColor,
+        },
       },
       tooltip: {
         callbacks: {
@@ -100,6 +119,13 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
         title: {
           display: true,
           text: "Time Period",
+          color: textColor,
+        },
+        ticks: {
+          color: textColor,
+        },
+        grid: {
+          color: gridColor,
         },
       },
       y: {
@@ -107,11 +133,16 @@ const BudgetVsUsageChart: React.FC<BudgetVsUsageChartProps> = ({
         title: {
           display: true,
           text: "Amount (USD)",
+          color: textColor,
         },
         ticks: {
+          color: textColor,
           callback: function (value: string | number) {
             return `$${value}`;
           },
+        },
+        grid: {
+          color: gridColor,
         },
       },
     },
