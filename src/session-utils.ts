@@ -311,6 +311,7 @@ export async function getOrCreateSession(
     // Cache the session data
     if (redis) {
       try {
+        const sessionCacheKey = getSessionCacheKey(headers.sessionId);
         await redis.setEx(
           sessionCacheKey,
           SESSION_CACHE_TTL,
@@ -374,6 +375,7 @@ export async function getOrCreateSession(
   // Cache the new session
   if (redis) {
     try {
+      const sessionCacheKey = getSessionCacheKey(headers.sessionId);
       await redis.setEx(
         sessionCacheKey,
         SESSION_CACHE_TTL,

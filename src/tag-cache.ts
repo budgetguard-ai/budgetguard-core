@@ -29,6 +29,7 @@ export async function getCachedTags(
   redis?: ReturnType<typeof createClient>,
   prisma?: PrismaClient,
 ): Promise<CachedTag[]> {
+  // Fallback to individual cache lookup
   const cacheKey = `tags:tenant:${tenantId}`;
 
   if (redis) {
@@ -119,11 +120,18 @@ export async function validateAndCacheTagSet(
   for (const tagName of tagNames) {
     const tag = allTags.find((t) => t.name === tagName && t.isActive);
     if (tag) {
-      validatedTags.push({
+      const validatedTag = {
         id: tag.id,
         name: tag.name,
         weight: 1.0, // Default weight
-      });
+      };
+
+      // Debug logging for validated tag weight
+      console.log(
+        `ValidatedTag creation: ${tag.name} -> weight=${validatedTag.weight}`,
+      );
+
+      validatedTags.push(validatedTag);
       foundTagNames.push(tag.name);
     }
   }
@@ -243,7 +251,7 @@ export async function incrementTagUsage(
 }
 
 /**
- * Get cached tag usage for budget calculations
+ * Get cached tag usage for budget calculations with batch optimization
  */
 export async function getCachedTagUsage(
   tenantName: string,
@@ -262,4 +270,49 @@ export async function getCachedTagUsage(
     console.warn("Redis error fetching tag usage cache:", error);
     return null;
   }
+}
+
+/**
+ * Batch get multiple tag usages with single Redis mGet call
+ */
+export async function getBatchTagUsages(
+  tenantName: string,
+  tagIds: number[],
+  periods: string[],
+  redis?: ReturnType<typeof createClient>,
+): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+
+  if (!redis || tagIds.length === 0 || periods.length === 0) {
+    return result;
+  }
+
+  // Build all cache keys for batch mGet operation
+  const cacheKeys: string[] = [];
+  const keyMap: Record<string, string> = {};
+
+  tagIds.forEach((tagId) => {
+    periods.forEach((period) => {
+      const cacheKey = getTagUsageCacheKey(tenantName, tagId, period);
+      const resultKey = `${tagId}_${period}`;
+      cacheKeys.push(cacheKey);
+      keyMap[cacheKey] = resultKey;
+    });
+  });
+
+  try {
+    const cacheValues = await redis.mGet(cacheKeys);
+
+    cacheKeys.forEach((key, index) => {
+      const value = cacheValues[index];
+      if (value) {
+        const resultKey = keyMap[key];
+        result[resultKey] = parseFloat(value);
+      }
+    });
+  } catch (error) {
+    console.warn("Redis error fetching batch tag usage cache:", error);
+  }
+
+  return result;
 }
