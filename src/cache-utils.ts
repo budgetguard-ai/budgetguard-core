@@ -162,7 +162,7 @@ export async function readSessionTagDataOptimized(
 
   // Tag session budgets
   if (params.tagIds?.length) {
-    params.tagIds.forEach((tagId, idx) => {
+    params.tagIds.forEach((tagId) => {
       const tagSessionBudgetKey = `tag_session_budget:${tagId}`;
       cacheKeys.push(tagSessionBudgetKey);
       keyMap[`tagSessionBudget_${tagId}`] = keyIndex++;
@@ -367,7 +367,7 @@ async function readSessionTagDataFallback(
   const result: SessionTagBatchData = {};
 
   // Parallel database queries for better performance with error handling
-  const promises: Promise<any>[] = [];
+  const promises: Promise<void>[] = [];
 
   // Add timeout protection for database queries
   const QUERY_TIMEOUT = 10000; // 10 seconds
@@ -510,7 +510,7 @@ async function fetchMissingDataFromDB(
   prisma: import("@prisma/client").PrismaClient,
 ): Promise<Partial<SessionTagBatchData>> {
   const result: Partial<SessionTagBatchData> = {};
-  const promises: Promise<any>[] = [];
+  const promises: Promise<void>[] = [];
 
   if (missingKeys.includes("session") && params.sessionId) {
     promises.push(
@@ -647,7 +647,7 @@ async function cacheFetchedData(
   data: Partial<SessionTagBatchData>,
   redis: ReturnType<typeof import("redis").createClient>,
 ): Promise<void> {
-  const cachePromises: Promise<any>[] = [];
+  const cachePromises: Promise<unknown>[] = [];
 
   // Cache session data
   if (data.sessionData && params.sessionId) {

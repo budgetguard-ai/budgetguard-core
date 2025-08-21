@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createClient } from "redis";
+import type { createClient } from "redis";
 import { PrismaClient } from "@prisma/client";
-import {
-  readSessionTagDataOptimized,
-  SessionTagBatchData,
-} from "../cache-utils";
+import { readSessionTagDataOptimized } from "../cache-utils";
 
 // Mock Redis client
 const mockRedis = {
@@ -82,7 +79,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           tagIds: [1],
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Verify single mGet call was made
@@ -145,7 +142,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           tenantId: 1,
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Verify database was queried
@@ -178,7 +175,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           sessionId: "test-session",
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should fallback to database queries
@@ -217,7 +214,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           tenantId: 1,
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should have session data from cache
@@ -239,7 +236,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           sessionId: "test-session",
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should return partial results even with database failures
@@ -262,7 +259,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           tagUsagePeriods: ["monthly"],
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should include tag usage keys in batch request
@@ -280,13 +277,13 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
       // Mock empty cache response
       mockRedis.mGet.mockResolvedValue([null, null]);
 
-      const result = await readSessionTagDataOptimized(
+      await readSessionTagDataOptimized(
         {
           tenantName: "test-tenant",
           budgetPeriods: ["monthly", "daily"],
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       expect(mockRedis.mGet).toHaveBeenCalledWith(
@@ -313,7 +310,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           budgetPeriods: ["monthly", "daily"],
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should make exactly ONE Redis call regardless of data complexity
@@ -339,7 +336,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           budgetPeriods: periods,
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
       const duration = Date.now() - startTime;
 
@@ -391,7 +388,7 @@ describe("Ultra-Optimized Batch Cache Operations", () => {
           sessionId: "test-session",
         },
         mockPrisma,
-        mockRedis as any,
+        mockRedis as ReturnType<typeof createClient>,
       );
 
       // Should handle timeout gracefully and return partial results

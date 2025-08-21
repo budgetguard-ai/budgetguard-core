@@ -4963,7 +4963,7 @@ export async function buildServer() {
         for (const tag of tags) {
           for (const budget of tag.budgets) {
             let usage = 0;
-            
+
             try {
               // Calculate usage for the actual budget period (like enforcement does)
               if (budget.period === "daily" || budget.period === "monthly") {
@@ -5002,7 +5002,10 @@ export async function buildServer() {
                 );
               }
             } catch (error) {
-              console.warn(`Error calculating budget usage for tag ${tag.name}:`, error);
+              console.warn(
+                `Error calculating budget usage for tag ${tag.name}:`,
+                error,
+              );
               // Fallback to tagUsageMap if budget period calculation fails
               const tagUsage = tagUsageMap.get(tag.id);
               usage = tagUsage ? tagUsage.usage : 0;

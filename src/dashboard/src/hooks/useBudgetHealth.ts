@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiClient } from "../services/api";
 import type { Tenant, Budget, TagBudgetHealth } from "../types";
-import { getBudgetDateRangeForRange } from "../utils/dateRange";
 
 export interface BudgetAlert {
   id: string;
