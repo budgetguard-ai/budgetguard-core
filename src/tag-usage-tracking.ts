@@ -356,17 +356,9 @@ export class TagUsageTracker {
 
       if (results) {
         for (let i = 0; i < tagIds.length; i++) {
-          const pipelineResult = results[i];
-          if (Array.isArray(pipelineResult) && pipelineResult.length === 2) {
-            const [error, usage] = pipelineResult as unknown as [
-              Error | null,
-              string | null,
-            ];
-            if (!error && usage !== null) {
-              result[tagIds[i]] = parseFloat(usage);
-            } else {
-              result[tagIds[i]] = 0;
-            }
+          const usage = results[i];
+          if (usage !== null && usage !== undefined) {
+            result[tagIds[i]] = parseFloat(usage as unknown as string);
           } else {
             result[tagIds[i]] = 0;
           }

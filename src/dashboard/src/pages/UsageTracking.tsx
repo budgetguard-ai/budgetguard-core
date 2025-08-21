@@ -164,7 +164,7 @@ const UsageTracking: React.FC = () => {
         row.status,
         row.promptTok.toString(),
         row.compTok.toString(),
-        `$${parseFloat(row.usd)}`,
+        `$${parseFloat(row.usd).toFixed(6)}`,
         row.tags.map((tag) => tag.name).join("; "),
       ]),
     ]
@@ -526,7 +526,7 @@ const UsageTracking: React.FC = () => {
                               variant="caption"
                               sx={{ fontWeight: 600 }}
                             >
-                              ${parseFloat(row.usd).toFixed(4)}
+                              ${parseFloat(row.usd).toFixed(6)}
                             </Typography>
                           </TableCell>
                           <TableCell sx={{ py: 1.5, maxWidth: 150 }}>
