@@ -43,6 +43,14 @@ export interface UsageLedger {
   promptTok: number;
   compTok: number;
   tenantId: number | null;
+  sessionId: string | null;
+  status: "success" | "blocked" | "failed";
+  tags: Array<{
+    id: number;
+    name: string;
+    path: string | null;
+    weight: number;
+  }>;
   tenantRef?: Tenant;
 }
 

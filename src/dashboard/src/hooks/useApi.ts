@@ -263,6 +263,7 @@ export const useUsageLedger = (params?: {
   tenantId?: number;
   startDate?: string;
   endDate?: string;
+  status?: "success" | "blocked" | "failed";
 }) => {
   return useQuery({
     queryKey: queryKeys.usageLedger(params),
