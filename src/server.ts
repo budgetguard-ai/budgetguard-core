@@ -2943,6 +2943,7 @@ export async function buildServer() {
             route: { type: "string" },
             startDate: { type: "string" },
             endDate: { type: "string" },
+            status: { type: "string", enum: ["success", "blocked", "failed"] },
           },
         },
         response: {
@@ -2963,6 +2964,20 @@ export async function buildServer() {
                     promptTok: { type: "number" },
                     compTok: { type: "number" },
                     tenantId: { type: "number" },
+                    sessionId: { type: ["string", "null"] },
+                    status: { type: "string" },
+                    tags: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "number" },
+                          name: { type: "string" },
+                          path: { type: ["string", "null"] },
+                          weight: { type: "number" },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -2992,6 +3007,7 @@ export async function buildServer() {
         route,
         startDate,
         endDate,
+        status,
       } = request.query as {
         days?: number;
         page?: number;
@@ -3000,6 +3016,7 @@ export async function buildServer() {
         route?: string;
         startDate?: string;
         endDate?: string;
+        status?: string;
       };
 
       const id = parseInt(tenantId);
@@ -3046,6 +3063,10 @@ export async function buildServer() {
         };
       }
 
+      if (status) {
+        where.status = status;
+      }
+
       try {
         const prismaClient = await getPrisma();
 
@@ -3060,6 +3081,11 @@ export async function buildServer() {
           take: limit,
           include: {
             tenantRef: true,
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         });
 
@@ -3074,6 +3100,14 @@ export async function buildServer() {
             promptTok: entry.promptTok,
             compTok: entry.compTok,
             tenantId: entry.tenantId,
+            sessionId: entry.sessionId,
+            status: entry.status,
+            tags: entry.tags.map((tagRef) => ({
+              id: tagRef.tag.id,
+              name: tagRef.tag.name,
+              path: tagRef.tag.path,
+              weight: tagRef.weight,
+            })),
           })),
           total,
           page,
@@ -3112,6 +3146,7 @@ export async function buildServer() {
             tenantId: { type: "number" },
             startDate: { type: "string" },
             endDate: { type: "string" },
+            status: { type: "string", enum: ["success", "blocked", "failed"] },
           },
         },
         response: {
@@ -3132,6 +3167,20 @@ export async function buildServer() {
                     promptTok: { type: "number" },
                     compTok: { type: "number" },
                     tenantId: { type: "number" },
+                    sessionId: { type: ["string", "null"] },
+                    status: { type: "string" },
+                    tags: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "number" },
+                          name: { type: "string" },
+                          path: { type: ["string", "null"] },
+                          weight: { type: "number" },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -3162,6 +3211,7 @@ export async function buildServer() {
         tenantId,
         startDate,
         endDate,
+        status,
       } = request.query as {
         days?: number;
         page?: number;
@@ -3172,6 +3222,7 @@ export async function buildServer() {
         tenantId?: number;
         startDate?: string;
         endDate?: string;
+        status?: string;
       };
 
       // Build date filter
@@ -3223,6 +3274,10 @@ export async function buildServer() {
         };
       }
 
+      if (status) {
+        where.status = status;
+      }
+
       try {
         const prismaClient = await getPrisma();
 
@@ -3237,6 +3292,11 @@ export async function buildServer() {
           take: limit,
           include: {
             tenantRef: true,
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
           },
         });
 
@@ -3251,6 +3311,14 @@ export async function buildServer() {
             promptTok: entry.promptTok,
             compTok: entry.compTok,
             tenantId: entry.tenantId,
+            sessionId: entry.sessionId,
+            status: entry.status,
+            tags: entry.tags.map((tagRef) => ({
+              id: tagRef.tag.id,
+              name: tagRef.tag.name,
+              path: tagRef.tag.path,
+              weight: tagRef.weight,
+            })),
           })),
           total,
           page,
