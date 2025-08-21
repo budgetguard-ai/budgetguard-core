@@ -112,7 +112,7 @@ const TagBudgetHealthCard: React.FC<{ tagBudget: TagBudgetHealth }> = ({
           }}
         >
           <Chip
-            label={`${tagBudget.period} budget`}
+            label={`${tagBudget.period} budget (UTC)`}
             size="small"
             variant="outlined"
             sx={{ fontSize: "0.7rem" }}

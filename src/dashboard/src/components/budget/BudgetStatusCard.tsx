@@ -84,7 +84,15 @@ const BudgetStatusCard: React.FC<BudgetStatusCardProps> = ({
           <Typography variant="h6" fontWeight="medium">
             {budgetStatus.period.charAt(0).toUpperCase() +
               budgetStatus.period.slice(1)}{" "}
-            Budget
+            Budget{" "}
+            <Typography
+              component="span"
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: "normal" }}
+            >
+              (UTC)
+            </Typography>
           </Typography>
           {getStatusIcon(budgetStatus.status)}
         </Box>
@@ -166,7 +174,17 @@ const BudgetStatusCard: React.FC<BudgetStatusCardProps> = ({
           >
             <Typography variant="caption" color="text.secondary">
               Period: {new Date(budgetStatus.startDate).toLocaleDateString()} -{" "}
-              {new Date(budgetStatus.endDate).toLocaleDateString()}
+              {new Date(budgetStatus.endDate).toLocaleDateString()} (UTC)
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+            >
+              Resets at{" "}
+              {budgetStatus.period === "daily"
+                ? "5:30 AM IST"
+                : "5:30 AM IST on 1st"}
             </Typography>
           </Box>
         )}
