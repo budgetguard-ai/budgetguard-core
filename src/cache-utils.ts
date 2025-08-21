@@ -57,6 +57,8 @@ export async function clearTenantCache(
     `budget:${tenant}:*`,
     `ledger:${tenant}:*`,
     `ratelimit:${tenant}`,
+    `tenant:${tenant}`,
+    `tag_usage:${tenant}:*`,
   ];
 
   for (const pattern of patterns) {
@@ -88,6 +90,59 @@ export async function clearBudgetCache(
 }
 
 /**
+ * Clear all session-related cache entries
+ */
+export async function clearSessionCache(
+  sessionId?: string,
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    if (sessionId) {
+      // Clear specific session cache
+      const sessionKeys = [`session:${sessionId}`, `session_cost:${sessionId}`];
+      await redis.del(sessionKeys);
+    } else {
+      // Clear all session-related caches
+      const patterns = [
+        "session:*",
+        "session_cost:*",
+        "tenant_session_budget:*",
+        "tag_session_budget:*",
+      ];
+
+      for (const pattern of patterns) {
+        const keys = await redis.keys(pattern);
+        if (keys.length > 0) {
+          await redis.del(keys);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Redis error clearing session cache:", error);
+  }
+}
+
+/**
+ * Invalidate session cache when sessions are modified or deleted
+ */
+export async function invalidateSessionCache(
+  sessionId: string,
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    // Invalidate specific session cache entries
+    const sessionKeys = [`session:${sessionId}`, `session_cost:${sessionId}`];
+    await redis.del(sessionKeys);
+  } catch (error) {
+    console.warn("Redis error invalidating session cache:", error);
+  }
+}
+
+/**
  * Set cache with automatic TTL
  */
 export async function setCacheWithTTL(
@@ -99,6 +154,125 @@ export async function setCacheWithTTL(
 
   const ttl = options.ttl || 3600; // Default 1 hour
   await options.redis.setEx(key, ttl, value);
+}
+
+/**
+ * Comprehensive cache cleanup for deleted sessions with proper TTL management
+ */
+export async function cleanupDeletedSessionCache(
+  sessionId: string,
+  tenantId?: number,
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    // 1. Clear session-specific caches
+    const sessionKeys = [`session:${sessionId}`, `session_cost:${sessionId}`];
+    await redis.del(sessionKeys);
+
+    // 2. If tenant is provided, also clear tenant-level session budget cache
+    if (tenantId) {
+      await redis.del(`tenant_session_budget:${tenantId}`);
+    }
+
+    console.log(`Cleaned up cache for deleted session ${sessionId}`);
+  } catch (error) {
+    console.warn("Redis error cleaning up deleted session cache:", error);
+  }
+}
+
+/**
+ * Advanced TTL management with dynamic cache expiration
+ */
+export async function setDynamicTTL(
+  key: string,
+  value: string,
+  baseType: "session" | "tag" | "tenant" | "budget" | "usage",
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  // Dynamic TTL based on cache type and usage patterns
+  const ttlMapping = {
+    session: 10 * 60, // 10 minutes (active data)
+    tag: 5 * 60, // 5 minutes (frequently changing)
+    tenant: 60 * 60, // 1 hour (relatively stable)
+    budget: 30 * 60, // 30 minutes (budget calculations)
+    usage: 30 * 60, // 30 minutes (usage tracking)
+  };
+
+  try {
+    const ttl = ttlMapping[baseType] || 3600;
+    await redis.setEx(key, ttl, value);
+  } catch (error) {
+    console.warn(`Redis error setting dynamic TTL for ${key}:`, error);
+  }
+}
+
+/**
+ * Batch cache cleanup with pattern matching and TTL optimization
+ */
+export async function batchCacheCleanup(
+  patterns: string[],
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis || patterns.length === 0) return;
+
+  try {
+    for (const pattern of patterns) {
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        // Use DEL with multiple keys for efficiency
+        await redis.del(keys);
+        console.log(
+          `Cleaned up ${keys.length} cache entries matching pattern: ${pattern}`,
+        );
+      }
+    }
+  } catch (error) {
+    console.warn("Redis error in batch cache cleanup:", error);
+  }
+}
+
+/**
+ * Cache health monitoring and automatic cleanup
+ */
+export async function performCacheMaintenance(
+  redis?: ReturnType<typeof import("redis").createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    // Get memory info
+    const info = await redis.info("memory");
+    const memoryUsage = info
+      .split("\n")
+      .find((line) => line.startsWith("used_memory:"));
+
+    if (memoryUsage) {
+      console.log(`Redis memory usage: ${memoryUsage}`);
+    }
+
+    // Clean up expired keys (Redis handles this automatically, but we can force it)
+    // Count keys by pattern for monitoring
+    const patterns = [
+      "session:*",
+      "session_cost:*",
+      "tags:tenant:*",
+      "tagset:*",
+      "tag_usage:*",
+      "budget:*",
+      "tenant:*",
+    ];
+
+    for (const pattern of patterns) {
+      const keys = await redis.keys(pattern);
+      console.log(`Pattern ${pattern}: ${keys.length} keys`);
+    }
+  } catch (error) {
+    console.warn("Redis error during cache maintenance:", error);
+  }
 }
 
 /**

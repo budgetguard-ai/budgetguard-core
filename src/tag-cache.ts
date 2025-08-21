@@ -187,6 +187,71 @@ export async function invalidateTagCache(
 }
 
 /**
+ * Clear tag-related caches when tags are deleted
+ */
+export async function clearTagCache(
+  tenantId?: number,
+  tagId?: number,
+  redis?: ReturnType<typeof createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    if (tagId) {
+      // Clear specific tag-related caches
+      const tagKeys = [`tag_session_budget:${tagId}`];
+      await redis.del(tagKeys);
+
+      // Also clear tag usage caches for this tag (all periods)
+      const usagePattern = `tag_usage:*:${tagId}:*`;
+      const usageKeys = await redis.keys(usagePattern);
+      if (usageKeys.length > 0) {
+        await redis.del(usageKeys);
+      }
+    }
+
+    if (tenantId) {
+      // Invalidate tenant's tag cache to refresh the tag list
+      await invalidateTagCache(tenantId, redis);
+    }
+  } catch (error) {
+    console.warn("Redis error clearing tag cache:", error);
+  }
+}
+
+/**
+ * Comprehensive cache cleanup for deleted tags with proper TTL management
+ */
+export async function cleanupDeletedTagCache(
+  tagId: number,
+  tenantId: number,
+  redis?: ReturnType<typeof createClient>,
+): Promise<void> {
+  if (!redis) return;
+
+  try {
+    // 1. Clear tag session budget cache
+    await redis.del(`tag_session_budget:${tagId}`);
+
+    // 2. Clear all tag usage caches for this tag across all tenants and periods
+    const usagePattern = `tag_usage:*:${tagId}:*`;
+    const usageKeys = await redis.keys(usagePattern);
+    if (usageKeys.length > 0) {
+      await redis.del(usageKeys);
+    }
+
+    // 3. Invalidate tenant tag cache to refresh tag list
+    await invalidateTagCache(tenantId, redis);
+
+    console.log(
+      `Cleaned up cache for deleted tag ${tagId} in tenant ${tenantId}`,
+    );
+  } catch (error) {
+    console.warn("Redis error cleaning up deleted tag cache:", error);
+  }
+}
+
+/**
  * Get tag usage cache key for budget tracking
  */
 export function getTagUsageCacheKey(
