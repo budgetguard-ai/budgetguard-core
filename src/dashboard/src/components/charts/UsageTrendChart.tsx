@@ -11,7 +11,7 @@ import {
   TooltipItem,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
-import { Box, Typography, Card, CardContent } from "@mui/material";
+import { Box, Typography, Card, CardContent, useTheme } from "@mui/material";
 
 ChartJS.register(
   CategoryScale,
@@ -43,6 +43,7 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
   title = "Usage Trends",
   height = 400,
 }) => {
+  const theme = useTheme();
   const chartData = {
     labels: data.labels,
     datasets: data.datasets.map((dataset) => ({
@@ -58,6 +59,12 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
     })),
   };
 
+  const textColor = theme.palette.mode === "dark" ? "#FFFFFF" : "#000000";
+  const gridColor =
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.1)"
+      : "rgba(0, 0, 0, 0.1)";
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -68,6 +75,9 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
     plugins: {
       legend: {
         position: "top" as const,
+        labels: {
+          color: textColor,
+        },
       },
       tooltip: {
         callbacks: {
@@ -85,6 +95,13 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
         title: {
           display: true,
           text: "Date",
+          color: textColor,
+        },
+        ticks: {
+          color: textColor,
+        },
+        grid: {
+          color: gridColor,
         },
       },
       y: {
@@ -92,11 +109,16 @@ const UsageTrendChart: React.FC<UsageTrendChartProps> = ({
         title: {
           display: true,
           text: "Usage (USD)",
+          color: textColor,
         },
         ticks: {
+          color: textColor,
           callback: function (value: string | number) {
             return `$${value}`;
           },
+        },
+        grid: {
+          color: gridColor,
         },
       },
     },
