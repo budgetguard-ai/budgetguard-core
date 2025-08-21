@@ -141,7 +141,10 @@ export async function getCachedTagBudgets(
       if (Array.isArray(parsed)) {
         return parsed;
       } else {
-        console.warn(`Invalid cached data for tag ${tagId}, falling back to database:`, parsed);
+        console.warn(
+          `Invalid cached data for tag ${tagId}, falling back to database:`,
+          parsed,
+        );
       }
     }
   } catch (error) {
@@ -260,7 +263,10 @@ export async function checkTagBudgets({
 
     // Safety check: ensure cachedTagBudgets is an array
     if (!cachedTagBudgets || !Array.isArray(cachedTagBudgets)) {
-      console.warn(`getCachedTagBudgets returned invalid data for tag ${validatedTag.name}:`, cachedTagBudgets);
+      console.warn(
+        `getCachedTagBudgets returned invalid data for tag ${validatedTag.name}:`,
+        cachedTagBudgets,
+      );
       continue; // Skip this tag
     }
 
