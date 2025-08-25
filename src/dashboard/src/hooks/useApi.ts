@@ -408,9 +408,9 @@ export const useSetSessionBudget = () => {
       void queryClient.invalidateQueries({
         queryKey: ["sessionBudget", variables.tenantId, variables.sessionId],
       });
-      // Invalidate sessions list to update budget display
+      // Invalidate all sessions queries for this tenant (regardless of filters)
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions(variables.tenantId),
+        queryKey: ["tenant", variables.tenantId, "sessions"],
       });
     },
   });
@@ -432,9 +432,9 @@ export const useRemoveSessionBudget = () => {
       void queryClient.invalidateQueries({
         queryKey: ["sessionBudget", variables.tenantId, variables.sessionId],
       });
-      // Invalidate sessions list to update budget display
+      // Invalidate all sessions queries for this tenant (regardless of filters)
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions(variables.tenantId),
+        queryKey: ["tenant", variables.tenantId, "sessions"],
       });
     },
   });
@@ -472,9 +472,9 @@ export const useSetTenantDefaultSessionBudget = () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.tenants,
       });
-      // Invalidate sessions list as budgets may have changed
+      // Invalidate all sessions queries for this tenant as budgets may have changed
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions(variables.tenantId),
+        queryKey: ["tenant", variables.tenantId, "sessions"],
       });
     },
   });
@@ -495,9 +495,9 @@ export const useRemoveTenantDefaultSessionBudget = () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.tenants,
       });
-      // Invalidate sessions list as budgets may have changed
+      // Invalidate all sessions queries for this tenant as budgets may have changed
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions(variables.tenantId),
+        queryKey: ["tenant", variables.tenantId, "sessions"],
       });
     },
   });

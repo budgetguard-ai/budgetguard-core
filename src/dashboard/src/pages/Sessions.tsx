@@ -140,6 +140,7 @@ const Sessions: React.FC = () => {
               total={pagination.total}
               page={pagination.page}
               limit={pagination.limit}
+              tenantId={selectedTenant?.id || 0}
               onPageChange={handlePageChange}
               onLimitChange={handleLimitChange}
             />

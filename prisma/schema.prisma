@@ -210,7 +210,7 @@ model Session {
   currentCostUsd     Decimal   @default(0) @db.Decimal(18,8)
   status             String    @default("active")
   metadata           Json?
-  lastActiveAt       DateTime  @updatedAt
+  lastActiveAt       DateTime?
   createdAt          DateTime  @default(now())
   
   tenant             Tenant    @relation(fields: [tenantId], references: [id])

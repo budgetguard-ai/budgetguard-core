@@ -20,6 +20,7 @@ import {
   Info as InfoIcon,
   AccountBalance as BudgetIcon,
   Key as KeyIcon,
+  AssignmentInd as SessionIcon,
 } from "@mui/icons-material";
 import { useTenants, useTenantBudgets, useTenantUsage } from "../hooks/useApi";
 import { formatCurrency } from "../utils/currency";
@@ -29,6 +30,7 @@ import {
   DeleteConfirmationDialog,
   ManageBudgetsDialog,
   ManageApiKeysDialog,
+  ManageDefaultSessionBudgetDialog,
 } from "../components/dialogs";
 import type { Tenant, Budget, BudgetUsage } from "../types";
 
@@ -41,6 +43,7 @@ const Tenants: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [apiKeysDialogOpen, setApiKeysDialogOpen] = useState(false);
+  const [sessionBudgetDialogOpen, setSessionBudgetDialogOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
 
   const handleEditTenant = (tenant: Tenant) => {
@@ -63,12 +66,18 @@ const Tenants: React.FC = () => {
     setApiKeysDialogOpen(true);
   };
 
+  const handleManageSessionBudget = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setSessionBudgetDialogOpen(true);
+  };
+
   const handleCloseDialogs = () => {
     setCreateDialogOpen(false);
     setEditDialogOpen(false);
     setDeleteDialogOpen(false);
     setBudgetDialogOpen(false);
     setApiKeysDialogOpen(false);
+    setSessionBudgetDialogOpen(false);
     setSelectedTenant(null);
   };
 
@@ -416,6 +425,15 @@ const Tenants: React.FC = () => {
                       <KeyIcon />
                     </IconButton>
                   </Tooltip>
+                  <Tooltip title="Manage Default Session Budget">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => handleManageSessionBudget(tenant)}
+                    >
+                      <SessionIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
                 <Box>
                   <Tooltip title="Edit Tenant">
@@ -487,6 +505,12 @@ const Tenants: React.FC = () => {
 
       <ManageApiKeysDialog
         open={apiKeysDialogOpen}
+        tenant={selectedTenant}
+        onClose={handleCloseDialogs}
+      />
+
+      <ManageDefaultSessionBudgetDialog
+        open={sessionBudgetDialogOpen}
         tenant={selectedTenant}
         onClose={handleCloseDialogs}
       />

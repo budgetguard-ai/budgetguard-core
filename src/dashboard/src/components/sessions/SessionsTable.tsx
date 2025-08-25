@@ -25,29 +25,34 @@ import {
   AccessTime as TimeIcon,
   MonetizationOn as CostIcon,
   Storage as RequestIcon,
+  Settings as SettingsIcon,
 } from "@mui/icons-material";
 import { formatCurrency } from "../../utils/currency";
 import { formatDistanceToNow } from "date-fns";
 import type { Session, SessionUsageEntry } from "../../types";
 import { useSessionUsage } from "../../hooks/useApi";
+import { ManageSessionBudgetDialog } from "../dialogs";
 
 interface SessionsTableProps {
   sessions: Session[];
   total: number;
   page: number;
   limit: number;
+  tenantId: number;
   onPageChange: (page: number) => void;
   onLimitChange: (limit: number) => void;
 }
 
 interface SessionRowProps {
   session: Session;
+  tenantId: number;
 }
 
-const SessionRow: React.FC<SessionRowProps> = ({ session }) => {
+const SessionRow: React.FC<SessionRowProps> = ({ session, tenantId }) => {
   const [expanded, setExpanded] = useState(false);
   const [usagePage, setUsagePage] = useState(1);
   const [usageLimit] = useState(50); // Load more entries when expanded
+  const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
 
   const {
     data: usageData,
@@ -227,10 +232,22 @@ const SessionRow: React.FC<SessionRowProps> = ({ session }) => {
             </Typography>
           </Box>
         </TableCell>
+
+        <TableCell align="center">
+          <Tooltip title="Manage Session Budget">
+            <IconButton
+              size="small"
+              onClick={() => setBudgetDialogOpen(true)}
+              color="primary"
+            >
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+        </TableCell>
       </TableRow>
 
       <TableRow>
-        <TableCell colSpan={6} sx={{ py: 0, border: "none" }}>
+        <TableCell colSpan={7} sx={{ py: 0, border: "none" }}>
           <Collapse in={expanded} timeout="auto" unmountOnExit>
             <Box sx={{ py: 2 }}>
               <Box
@@ -345,6 +362,14 @@ const SessionRow: React.FC<SessionRowProps> = ({ session }) => {
           </Collapse>
         </TableCell>
       </TableRow>
+
+      <ManageSessionBudgetDialog
+        open={budgetDialogOpen}
+        onClose={() => setBudgetDialogOpen(false)}
+        tenantId={tenantId}
+        sessionId={session.sessionId}
+        sessionName={session.name || undefined}
+      />
     </>
   );
 };
@@ -354,6 +379,7 @@ const SessionsTable: React.FC<SessionsTableProps> = ({
   total,
   page,
   limit,
+  tenantId,
   onPageChange,
   onLimitChange,
 }) => {
@@ -401,8 +427,8 @@ const SessionsTable: React.FC<SessionsTableProps> = ({
           </Typography>
         </Box>
 
-        <TableContainer sx={{ maxHeight: 600, width: "100%" }}>
-          <Table size="small" sx={{ width: "100%" }}>
+        <TableContainer sx={{ overflowX: "auto" }}>
+          <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>Session</TableCell>
@@ -411,11 +437,16 @@ const SessionsTable: React.FC<SessionsTableProps> = ({
                 <TableCell>Last Active</TableCell>
                 <TableCell align="right">Cost & Budget</TableCell>
                 <TableCell align="right">Requests</TableCell>
+                <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {sessions.map((session) => (
-                <SessionRow key={session.sessionId} session={session} />
+                <SessionRow
+                  key={session.sessionId}
+                  session={session}
+                  tenantId={tenantId}
+                />
               ))}
             </TableBody>
           </Table>

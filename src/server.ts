@@ -5458,8 +5458,8 @@ export async function buildServer() {
 
         const offset = (page - 1) * limit;
 
-        // Get sessions with usage count
-        const [sessions, total] = await Promise.all([
+        // Get sessions with usage count and tenant info
+        const [sessions, total, tenantInfo] = await Promise.all([
           prisma.session.findMany({
             where,
             select: {
@@ -5478,6 +5478,10 @@ export async function buildServer() {
             take: limit,
           }),
           prisma.session.count({ where }),
+          prisma.tenant.findUnique({
+            where: { id: tenantIdNum },
+            select: { defaultSessionBudgetUsd: true },
+          }),
         ]);
 
         // Get usage counts separately since direct relation may not exist
@@ -5511,6 +5515,10 @@ export async function buildServer() {
           sessionCosts.map((sc) => [sc.sessionId, Number(sc._sum.usd || 0)]),
         );
 
+        // Calculate effective budget using tenant default if session budget is null
+        const tenantDefaultBudget =
+          tenantInfo?.defaultSessionBudgetUsd?.toNumber() ?? null;
+
         // Format response
         const formattedSessions = sessions.map((session) => ({
           sessionId: session.sessionId,
@@ -5518,7 +5526,7 @@ export async function buildServer() {
           path: session.path,
           effectiveBudgetUsd: session.effectiveBudgetUsd
             ? Number(session.effectiveBudgetUsd)
-            : null,
+            : tenantDefaultBudget,
           currentCostUsd: costMap.get(session.sessionId) || 0,
           status: session.status,
           metadata: session.metadata,
