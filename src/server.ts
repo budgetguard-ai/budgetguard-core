@@ -5669,6 +5669,107 @@ export async function buildServer() {
     },
   );
 
+  // Session budget management endpoint
+  app.put(
+    "/admin/tenant/:tenantId/sessions/:sessionId/budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Set session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            sessionId: { type: "string" },
+          },
+          required: ["tenantId", "sessionId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            budgetUsd: { type: "number", minimum: 0 },
+          },
+          required: ["budgetUsd"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, sessionId } = req.params as {
+        tenantId: string;
+        sessionId: string;
+      };
+      const { budgetUsd } = req.body as { budgetUsd: number };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      if (budgetUsd < 0) {
+        return reply.code(400).send({ error: "Budget must be non-negative" });
+      }
+
+      try {
+        // Verify session exists and belongs to tenant
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: { tenantId: true },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        if (session.tenantId !== tenantIdNum) {
+          return reply
+            .code(403)
+            .send({ error: "Session does not belong to tenant" });
+        }
+
+        // Update session budget
+        const updatedSession = await prisma.session.update({
+          where: { sessionId },
+          data: {
+            effectiveBudgetUsd: new Prisma.Decimal(budgetUsd),
+          },
+          select: {
+            sessionId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+          },
+        });
+
+        // Invalidate session cache if Redis is available
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const sessionCacheKey = `session:${sessionId}`;
+            await redis.del(sessionCacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn("Failed to invalidate session cache:", error);
+          }
+        }
+
+        return reply.send({
+          sessionId: updatedSession.sessionId,
+          effectiveBudgetUsd: Number(updatedSession.effectiveBudgetUsd),
+          currentCostUsd: Number(updatedSession.currentCostUsd),
+          status: updatedSession.status,
+        });
+      } catch (error) {
+        console.error("Error updating session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to update session budget" });
+      }
+    },
+  );
+
   return app;
 }
 
