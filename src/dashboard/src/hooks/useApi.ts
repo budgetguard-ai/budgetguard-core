@@ -8,6 +8,7 @@ import type {
   CreateBudgetRequest,
   CreateModelPricingRequest,
   UpdateModelPricingRequest,
+  SessionFilters,
 } from "../types";
 
 // Query keys
@@ -24,6 +25,10 @@ export const queryKeys = {
   usageLedger: (params?: Record<string, unknown>) =>
     ["usageLedger", params] as const,
   modelPricing: ["modelPricing"] as const,
+  sessions: (tenantId: number, filters?: SessionFilters) =>
+    ["tenant", tenantId, "sessions", filters] as const,
+  sessionUsage: (sessionId: string, params?: Record<string, unknown>) =>
+    ["session", sessionId, "usage", params] as const,
 };
 
 // Health hooks
@@ -346,6 +351,154 @@ export const useUpdateModelPricing = () => {
     }) => apiClient.updateModelPricing(idOrModel, data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.modelPricing });
+    },
+  });
+};
+
+// Session hooks
+export const useSessions = (tenantId: number, filters?: SessionFilters) => {
+  return useQuery({
+    queryKey: queryKeys.sessions(tenantId, filters),
+    queryFn: () => apiClient.getSessions(tenantId, filters),
+    enabled: !!tenantId,
+  });
+};
+
+export const useSessionUsage = (
+  sessionId: string,
+  page = 1,
+  limit = 50,
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: queryKeys.sessionUsage(sessionId, { page, limit }),
+    queryFn: () => apiClient.getSessionUsage(sessionId, page, limit),
+    enabled: !!sessionId && enabled,
+  });
+};
+
+// Session budget management hooks
+export const useSessionBudget = (
+  tenantId: number,
+  sessionId: string,
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: ["sessionBudget", tenantId, sessionId],
+    queryFn: () => apiClient.getSessionBudget(tenantId, sessionId),
+    enabled: !!tenantId && !!sessionId && enabled,
+  });
+};
+
+export const useSetSessionBudget = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      sessionId,
+      budgetUsd,
+    }: {
+      tenantId: number;
+      sessionId: string;
+      budgetUsd: number;
+    }) => apiClient.setSessionBudget(tenantId, sessionId, budgetUsd),
+    onSuccess: (_, variables) => {
+      // Invalidate session budget query
+      void queryClient.invalidateQueries({
+        queryKey: ["sessionBudget", variables.tenantId, variables.sessionId],
+      });
+      // Invalidate all sessions queries for this tenant (regardless of filters)
+      void queryClient.invalidateQueries({
+        queryKey: ["tenant", variables.tenantId, "sessions"],
+      });
+    },
+  });
+};
+
+export const useRemoveSessionBudget = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      sessionId,
+    }: {
+      tenantId: number;
+      sessionId: string;
+    }) => apiClient.removeSessionBudget(tenantId, sessionId),
+    onSuccess: (_, variables) => {
+      // Invalidate session budget query
+      void queryClient.invalidateQueries({
+        queryKey: ["sessionBudget", variables.tenantId, variables.sessionId],
+      });
+      // Invalidate all sessions queries for this tenant (regardless of filters)
+      void queryClient.invalidateQueries({
+        queryKey: ["tenant", variables.tenantId, "sessions"],
+      });
+    },
+  });
+};
+
+// Tenant default session budget hooks
+export const useTenantDefaultSessionBudget = (
+  tenantId: number,
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: ["tenantDefaultSessionBudget", tenantId],
+    queryFn: () => apiClient.getTenantDefaultSessionBudget(tenantId),
+    enabled: !!tenantId && enabled,
+  });
+};
+
+export const useSetTenantDefaultSessionBudget = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      budgetUsd,
+    }: {
+      tenantId: number;
+      budgetUsd: number;
+    }) => apiClient.setTenantDefaultSessionBudget(tenantId, budgetUsd),
+    onSuccess: (_, variables) => {
+      // Invalidate tenant default session budget query
+      void queryClient.invalidateQueries({
+        queryKey: ["tenantDefaultSessionBudget", variables.tenantId],
+      });
+      // Invalidate tenants list to update display
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenants,
+      });
+      // Invalidate all sessions queries for this tenant as budgets may have changed
+      void queryClient.invalidateQueries({
+        queryKey: ["tenant", variables.tenantId, "sessions"],
+      });
+    },
+  });
+};
+
+export const useRemoveTenantDefaultSessionBudget = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ tenantId }: { tenantId: number }) =>
+      apiClient.removeTenantDefaultSessionBudget(tenantId),
+    onSuccess: (_, variables) => {
+      // Invalidate tenant default session budget query
+      void queryClient.invalidateQueries({
+        queryKey: ["tenantDefaultSessionBudget", variables.tenantId],
+      });
+      // Invalidate tenants list to update display
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tenants,
+      });
+      // Invalidate all sessions queries for this tenant as budgets may have changed
+      void queryClient.invalidateQueries({
+        queryKey: ["tenant", variables.tenantId, "sessions"],
+      });
     },
   });
 };

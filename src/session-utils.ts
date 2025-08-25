@@ -445,6 +445,7 @@ export async function incrementSessionCost(
   usd: number,
   prisma: PrismaClient,
   redis?: ReturnType<typeof createClient>,
+  updateLastActive: boolean = true,
 ) {
   if (!sessionId || usd <= 0) return;
 
@@ -458,14 +459,16 @@ export async function incrementSessionCost(
       await redis.expire(costCacheKey, SESSION_COST_CACHE_TTL);
 
       // Update lastActiveAt in database (async, don't wait)
-      prisma.session
-        .update({
-          where: { sessionId },
-          data: { lastActiveAt: new Date() },
-        })
-        .catch((error) => {
-          console.warn("Failed to update session lastActiveAt:", error);
-        });
+      if (updateLastActive) {
+        prisma.session
+          .update({
+            where: { sessionId },
+            data: { lastActiveAt: new Date() },
+          })
+          .catch((error) => {
+            console.warn("Failed to update session lastActiveAt:", error);
+          });
+      }
 
       return;
     } catch (error) {
@@ -481,7 +484,7 @@ export async function incrementSessionCost(
       currentCostUsd: {
         increment: new Prisma.Decimal(usd),
       },
-      lastActiveAt: new Date(),
+      ...(updateLastActive && { lastActiveAt: new Date() }),
     },
   });
 }

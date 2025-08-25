@@ -18,6 +18,9 @@ import type {
   UpdateTagBudgetRequest,
   TagAnalyticsParams,
   TagAnalytics,
+  SessionsResponse,
+  SessionUsageResponse,
+  SessionFilters,
 } from "../types";
 
 class ApiClient {
@@ -481,6 +484,134 @@ class ApiClient {
     const url = `/admin/tenant/${tenantId}/tag-analytics${queryString ? `?${queryString}` : ""}`;
 
     return this.request(url);
+  }
+
+  // Session endpoints
+  async getSessions(
+    tenantId: number,
+    filters?: SessionFilters,
+  ): Promise<SessionsResponse> {
+    const queryParams = new URLSearchParams();
+
+    if (filters?.page) queryParams.append("page", filters.page.toString());
+    if (filters?.limit) queryParams.append("limit", filters.limit.toString());
+    if (filters?.startDate) queryParams.append("startDate", filters.startDate);
+    if (filters?.endDate) queryParams.append("endDate", filters.endDate);
+    if (filters?.status) queryParams.append("status", filters.status);
+    if (filters?.search) queryParams.append("search", filters.search);
+
+    const queryString = queryParams.toString();
+    const url = `/admin/tenant/${tenantId}/sessions${queryString ? `?${queryString}` : ""}`;
+
+    return this.request(url);
+  }
+
+  async getSessionUsage(
+    sessionId: string,
+    page = 1,
+    limit = 50,
+  ): Promise<SessionUsageResponse> {
+    const queryParams = new URLSearchParams();
+    queryParams.append("page", page.toString());
+    queryParams.append("limit", limit.toString());
+
+    const queryString = queryParams.toString();
+    const url = `/admin/sessions/${sessionId}/usage?${queryString}`;
+
+    return this.request(url);
+  }
+
+  // Session budget management methods
+  async getSessionBudget(
+    tenantId: number,
+    sessionId: string,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number | null;
+    currentCostUsd: number;
+    status: string;
+    budgetSource: {
+      tenantName: string;
+      tenantDefaultBudget: number | null;
+      hasCustomBudget: boolean;
+      customBudget: number | null;
+    };
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+    );
+  }
+
+  async setSessionBudget(
+    tenantId: number,
+    sessionId: string,
+    budgetUsd: number,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number;
+    currentCostUsd: number;
+    status: string;
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ budgetUsd }),
+      },
+    );
+  }
+
+  async removeSessionBudget(
+    tenantId: number,
+    sessionId: string,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number | null;
+    currentCostUsd: number;
+    status: string;
+    reverted: boolean;
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+      {
+        method: "DELETE",
+      },
+    );
+  }
+
+  // Tenant default session budget management methods
+  async getTenantDefaultSessionBudget(tenantId: number): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: number | null;
+    sessionCount: number;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`);
+  }
+
+  async setTenantDefaultSessionBudget(
+    tenantId: number,
+    budgetUsd: number,
+  ): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: number;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`, {
+      method: "PUT",
+      body: JSON.stringify({ budgetUsd }),
+    });
+  }
+
+  async removeTenantDefaultSessionBudget(tenantId: number): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: null;
+    removed: boolean;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`, {
+      method: "DELETE",
+    });
   }
 }
 

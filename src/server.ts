@@ -5345,6 +5345,861 @@ export async function buildServer() {
     },
   );
 
+  // Session management endpoints
+  app.get(
+    "/admin/tenant/:tenantId/sessions",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "List tenant sessions",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            page: { type: "number", default: 1 },
+            limit: { type: "number", default: 50, maximum: 100 },
+            startDate: { type: "string", format: "date" },
+            endDate: { type: "string", format: "date" },
+            status: {
+              type: "string",
+              enum: ["active", "budget_exceeded", "completed", "error"],
+            },
+            search: { type: "string" },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const {
+        page = 1,
+        limit = 50,
+        startDate,
+        endDate,
+        status,
+        search,
+      } = req.query as {
+        page?: number;
+        limit?: number;
+        startDate?: string;
+        endDate?: string;
+        status?: string;
+        search?: string;
+      };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Verify tenant exists
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+          select: { id: true },
+        });
+
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        // Build where clause
+        const where: {
+          tenantId: number;
+          createdAt?: { gte?: Date; lte?: Date };
+          status?: string;
+          OR?: Array<
+            | { sessionId: { contains: string; mode: "insensitive" } }
+            | { name: { contains: string; mode: "insensitive" } }
+            | {
+                AND: Array<
+                  | { name: { not: null } }
+                  | { name: { contains: string; mode: "insensitive" } }
+                >;
+              }
+          >;
+        } = {
+          tenantId: tenantIdNum,
+        };
+
+        if (startDate || endDate) {
+          where.createdAt = {};
+          if (startDate) where.createdAt.gte = new Date(startDate);
+          if (endDate) {
+            const endDateTime = new Date(endDate);
+            endDateTime.setUTCHours(23, 59, 59, 999);
+            where.createdAt.lte = endDateTime;
+          }
+        }
+
+        if (status) {
+          where.status = status;
+        }
+
+        if (search) {
+          where.OR = [
+            { sessionId: { contains: search, mode: "insensitive" } },
+            {
+              AND: [
+                { name: { not: null } },
+                { name: { contains: search, mode: "insensitive" } },
+              ],
+            },
+          ];
+        }
+
+        const offset = (page - 1) * limit;
+
+        // Get sessions with usage count and tenant info
+        const [sessions, total, tenantInfo] = await Promise.all([
+          prisma.session.findMany({
+            where,
+            select: {
+              sessionId: true,
+              name: true,
+              path: true,
+              effectiveBudgetUsd: true,
+              currentCostUsd: true,
+              status: true,
+              metadata: true,
+              createdAt: true,
+              lastActiveAt: true,
+            },
+            orderBy: { lastActiveAt: "desc" },
+            skip: offset,
+            take: limit,
+          }),
+          prisma.session.count({ where }),
+          prisma.tenant.findUnique({
+            where: { id: tenantIdNum },
+            select: { defaultSessionBudgetUsd: true },
+          }),
+        ]);
+
+        // Get usage counts separately since direct relation may not exist
+        const sessionIds = sessions.map((s) => s.sessionId);
+        const usageCounts = await prisma.usageLedger.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+          },
+          _count: {
+            id: true,
+          },
+        });
+
+        const usageCountMap = new Map(
+          usageCounts.map((uc) => [uc.sessionId, uc._count.id]),
+        );
+
+        // Calculate actual costs from usage ledger
+        const sessionCosts = await prisma.usageLedger.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+          },
+          _sum: {
+            usd: true,
+          },
+        });
+
+        const costMap = new Map(
+          sessionCosts.map((sc) => [sc.sessionId, Number(sc._sum.usd || 0)]),
+        );
+
+        // Calculate effective budget using tenant default if session budget is null
+        const tenantDefaultBudget =
+          tenantInfo?.defaultSessionBudgetUsd?.toNumber() ?? null;
+
+        // Format response
+        const formattedSessions = sessions.map((session) => ({
+          sessionId: session.sessionId,
+          name: session.name,
+          path: session.path,
+          effectiveBudgetUsd: session.effectiveBudgetUsd
+            ? Number(session.effectiveBudgetUsd)
+            : tenantDefaultBudget,
+          currentCostUsd: costMap.get(session.sessionId) || 0,
+          status: session.status,
+          metadata: session.metadata,
+          createdAt: session.createdAt,
+          lastActiveAt: session.lastActiveAt,
+          requestCount: usageCountMap.get(session.sessionId) || 0,
+        }));
+
+        return reply.send({
+          sessions: formattedSessions,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching sessions:", error);
+        return reply.code(500).send({ error: "Failed to fetch sessions" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/sessions/:sessionId/usage",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Get session usage details",
+        params: {
+          type: "object",
+          properties: {
+            sessionId: { type: "string" },
+          },
+          required: ["sessionId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            page: { type: "number", default: 1 },
+            limit: { type: "number", default: 50, maximum: 100 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { sessionId } = req.params as { sessionId: string };
+      const { page = 1, limit = 50 } = req.query as {
+        page?: number;
+        limit?: number;
+      };
+
+      try {
+        // Verify session exists
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: {
+            sessionId: true,
+            name: true,
+            tenantId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+          },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        const offset = (page - 1) * limit;
+
+        // Get usage ledger entries for this session
+        const [usageEntries, total] = await Promise.all([
+          prisma.usageLedger.findMany({
+            where: { sessionId },
+            select: {
+              id: true,
+              ts: true,
+              route: true,
+              model: true,
+              usd: true,
+              promptTok: true,
+              compTok: true,
+              status: true,
+              tags: {
+                select: {
+                  tag: {
+                    select: {
+                      id: true,
+                      name: true,
+                      color: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { ts: "desc" },
+            skip: offset,
+            take: limit,
+          }),
+          prisma.usageLedger.count({ where: { sessionId } }),
+        ]);
+
+        // Format response
+        const formattedEntries = usageEntries.map((entry) => ({
+          id: Number(entry.id),
+          timestamp: entry.ts,
+          route: entry.route,
+          model: entry.model,
+          usd: Number(entry.usd),
+          promptTokens: entry.promptTok,
+          completionTokens: entry.compTok,
+          status: entry.status,
+          tags: entry.tags.map((tagRef) => ({
+            id: tagRef.tag.id,
+            name: tagRef.tag.name,
+            color: tagRef.tag.color,
+          })),
+        }));
+
+        return reply.send({
+          session: {
+            sessionId: session.sessionId,
+            name: session.name,
+            tenantId: session.tenantId,
+            effectiveBudgetUsd: session.effectiveBudgetUsd
+              ? Number(session.effectiveBudgetUsd)
+              : null,
+            currentCostUsd: Number(session.currentCostUsd),
+            status: session.status,
+          },
+          usage: formattedEntries,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching session usage:", error);
+        return reply.code(500).send({ error: "Failed to fetch session usage" });
+      }
+    },
+  );
+
+  // Session budget management endpoint
+  app.put(
+    "/admin/tenant/:tenantId/sessions/:sessionId/budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Set session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            sessionId: { type: "string" },
+          },
+          required: ["tenantId", "sessionId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            budgetUsd: { type: "number", minimum: 0 },
+          },
+          required: ["budgetUsd"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, sessionId } = req.params as {
+        tenantId: string;
+        sessionId: string;
+      };
+      const { budgetUsd } = req.body as { budgetUsd: number };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      if (budgetUsd < 0) {
+        return reply.code(400).send({ error: "Budget must be non-negative" });
+      }
+
+      try {
+        // Verify session exists and belongs to tenant
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: { tenantId: true },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        if (session.tenantId !== tenantIdNum) {
+          return reply
+            .code(403)
+            .send({ error: "Session does not belong to tenant" });
+        }
+
+        // Update session budget
+        const updatedSession = await prisma.session.update({
+          where: { sessionId },
+          data: {
+            effectiveBudgetUsd: new Prisma.Decimal(budgetUsd),
+          },
+          select: {
+            sessionId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+          },
+        });
+
+        // Invalidate session cache if Redis is available
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const sessionCacheKey = `session:${sessionId}`;
+            await redis.del(sessionCacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn("Failed to invalidate session cache:", error);
+          }
+        }
+
+        return reply.send({
+          sessionId: updatedSession.sessionId,
+          effectiveBudgetUsd: Number(updatedSession.effectiveBudgetUsd),
+          currentCostUsd: Number(updatedSession.currentCostUsd),
+          status: updatedSession.status,
+        });
+      } catch (error) {
+        console.error("Error updating session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to update session budget" });
+      }
+    },
+  );
+
+  // Remove session budget endpoint (revert to tenant default)
+  app.delete(
+    "/admin/tenant/:tenantId/sessions/:sessionId/budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Remove session budget (revert to tenant default)",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            sessionId: { type: "string" },
+          },
+          required: ["tenantId", "sessionId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, sessionId } = req.params as {
+        tenantId: string;
+        sessionId: string;
+      };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Verify session exists and belongs to tenant
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: { tenantId: true },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        if (session.tenantId !== tenantIdNum) {
+          return reply
+            .code(403)
+            .send({ error: "Session does not belong to tenant" });
+        }
+
+        // Get tenant's default session budget
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+          select: { defaultSessionBudgetUsd: true },
+        });
+
+        const defaultBudget =
+          tenant?.defaultSessionBudgetUsd?.toNumber() ?? null;
+
+        // Update session to use tenant default
+        const updatedSession = await prisma.session.update({
+          where: { sessionId },
+          data: {
+            effectiveBudgetUsd: defaultBudget
+              ? new Prisma.Decimal(defaultBudget)
+              : null,
+          },
+          select: {
+            sessionId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+          },
+        });
+
+        // Invalidate session cache if Redis is available
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const sessionCacheKey = `session:${sessionId}`;
+            await redis.del(sessionCacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn("Failed to invalidate session cache:", error);
+          }
+        }
+
+        return reply.send({
+          sessionId: updatedSession.sessionId,
+          effectiveBudgetUsd: updatedSession.effectiveBudgetUsd
+            ? Number(updatedSession.effectiveBudgetUsd)
+            : null,
+          currentCostUsd: Number(updatedSession.currentCostUsd),
+          status: updatedSession.status,
+          reverted: true,
+        });
+      } catch (error) {
+        console.error("Error removing session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to remove session budget" });
+      }
+    },
+  );
+
+  // Get session budget details endpoint
+  app.get(
+    "/admin/tenant/:tenantId/sessions/:sessionId/budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Get session budget details",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+            sessionId: { type: "string" },
+          },
+          required: ["tenantId", "sessionId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId, sessionId } = req.params as {
+        tenantId: string;
+        sessionId: string;
+      };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Get session with tenant info
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: {
+            sessionId: true,
+            tenantId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+            tenant: {
+              select: {
+                name: true,
+                defaultSessionBudgetUsd: true,
+              },
+            },
+          },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        if (session.tenantId !== tenantIdNum) {
+          return reply
+            .code(403)
+            .send({ error: "Session does not belong to tenant" });
+        }
+
+        const effectiveBudget = session.effectiveBudgetUsd
+          ? Number(session.effectiveBudgetUsd)
+          : null;
+        const tenantDefault = session.tenant.defaultSessionBudgetUsd
+          ? Number(session.tenant.defaultSessionBudgetUsd)
+          : null;
+        const hasCustomBudget = effectiveBudget !== tenantDefault;
+
+        return reply.send({
+          sessionId: session.sessionId,
+          effectiveBudgetUsd: effectiveBudget,
+          currentCostUsd: Number(session.currentCostUsd),
+          status: session.status,
+          budgetSource: {
+            tenantName: session.tenant.name,
+            tenantDefaultBudget: tenantDefault,
+            hasCustomBudget: hasCustomBudget,
+            customBudget: hasCustomBudget ? effectiveBudget : null,
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to fetch session budget" });
+      }
+    },
+  );
+
+  // Tenant default session budget management endpoints
+
+  // Set tenant default session budget
+  app.put(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Set tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            budgetUsd: { type: "number", minimum: 0 },
+          },
+          required: ["budgetUsd"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { budgetUsd } = req.body as { budgetUsd: number };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      if (budgetUsd < 0) {
+        return reply.code(400).send({ error: "Budget must be non-negative" });
+      }
+
+      try {
+        // Update tenant default session budget
+        const updatedTenant = await prisma.tenant.update({
+          where: { id: tenantIdNum },
+          data: {
+            defaultSessionBudgetUsd: new Prisma.Decimal(budgetUsd),
+          },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+          },
+        });
+
+        // Invalidate tenant session budget cache
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const cacheKey = `tenant_session_budget:${tenantIdNum}`;
+            await redis.del(cacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn(
+              "Failed to invalidate tenant session budget cache:",
+              error,
+            );
+          }
+        }
+
+        return reply.send({
+          tenantId: updatedTenant.id,
+          tenantName: updatedTenant.name,
+          defaultSessionBudgetUsd: Number(
+            updatedTenant.defaultSessionBudgetUsd,
+          ),
+        });
+      } catch (error) {
+        console.error("Error updating tenant default session budget:", error);
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025"
+        ) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+        return reply
+          .code(500)
+          .send({ error: "Failed to update tenant default session budget" });
+      }
+    },
+  );
+
+  // Remove tenant default session budget
+  app.delete(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Remove tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Remove tenant default session budget
+        const updatedTenant = await prisma.tenant.update({
+          where: { id: tenantIdNum },
+          data: {
+            defaultSessionBudgetUsd: null,
+          },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+          },
+        });
+
+        // Invalidate tenant session budget cache
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const cacheKey = `tenant_session_budget:${tenantIdNum}`;
+            await redis.del(cacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn(
+              "Failed to invalidate tenant session budget cache:",
+              error,
+            );
+          }
+        }
+
+        return reply.send({
+          tenantId: updatedTenant.id,
+          tenantName: updatedTenant.name,
+          defaultSessionBudgetUsd: null,
+          removed: true,
+        });
+      } catch (error) {
+        console.error("Error removing tenant default session budget:", error);
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025"
+        ) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+        return reply
+          .code(500)
+          .send({ error: "Failed to remove tenant default session budget" });
+      }
+    },
+  );
+
+  // Get tenant default session budget
+  app.get(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Get tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+            _count: {
+              select: {
+                sessions: true,
+              },
+            },
+          },
+        });
+
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        return reply.send({
+          tenantId: tenant.id,
+          tenantName: tenant.name,
+          defaultSessionBudgetUsd: tenant.defaultSessionBudgetUsd
+            ? Number(tenant.defaultSessionBudgetUsd)
+            : null,
+          sessionCount: tenant._count.sessions,
+        });
+      } catch (error) {
+        console.error("Error fetching tenant default session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to fetch tenant default session budget" });
+      }
+    },
+  );
+
   return app;
 }
 
