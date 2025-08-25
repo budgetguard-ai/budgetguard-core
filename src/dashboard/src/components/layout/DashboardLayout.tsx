@@ -121,8 +121,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             style={{
               width: 48,
               height: 48,
-              filter: appTheme === "dark" ? "invert(1)" : "none",
-              transition: "filter 0.3s ease",
             }}
           />
           <Typography
