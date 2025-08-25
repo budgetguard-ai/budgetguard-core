@@ -5961,6 +5961,237 @@ export async function buildServer() {
     },
   );
 
+  // Tenant default session budget management endpoints
+
+  // Set tenant default session budget
+  app.put(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Set tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            budgetUsd: { type: "number", minimum: 0 },
+          },
+          required: ["budgetUsd"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const { budgetUsd } = req.body as { budgetUsd: number };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      if (budgetUsd < 0) {
+        return reply.code(400).send({ error: "Budget must be non-negative" });
+      }
+
+      try {
+        // Update tenant default session budget
+        const updatedTenant = await prisma.tenant.update({
+          where: { id: tenantIdNum },
+          data: {
+            defaultSessionBudgetUsd: new Prisma.Decimal(budgetUsd),
+          },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+          },
+        });
+
+        // Invalidate tenant session budget cache
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const cacheKey = `tenant_session_budget:${tenantIdNum}`;
+            await redis.del(cacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn(
+              "Failed to invalidate tenant session budget cache:",
+              error,
+            );
+          }
+        }
+
+        return reply.send({
+          tenantId: updatedTenant.id,
+          tenantName: updatedTenant.name,
+          defaultSessionBudgetUsd: Number(
+            updatedTenant.defaultSessionBudgetUsd,
+          ),
+        });
+      } catch (error) {
+        console.error("Error updating tenant default session budget:", error);
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025"
+        ) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+        return reply
+          .code(500)
+          .send({ error: "Failed to update tenant default session budget" });
+      }
+    },
+  );
+
+  // Remove tenant default session budget
+  app.delete(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Remove tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Remove tenant default session budget
+        const updatedTenant = await prisma.tenant.update({
+          where: { id: tenantIdNum },
+          data: {
+            defaultSessionBudgetUsd: null,
+          },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+          },
+        });
+
+        // Invalidate tenant session budget cache
+        if (process.env.REDIS_URL) {
+          try {
+            const redis = createClient({ url: process.env.REDIS_URL });
+            await redis.connect();
+            const cacheKey = `tenant_session_budget:${tenantIdNum}`;
+            await redis.del(cacheKey);
+            await redis.disconnect();
+          } catch (error) {
+            console.warn(
+              "Failed to invalidate tenant session budget cache:",
+              error,
+            );
+          }
+        }
+
+        return reply.send({
+          tenantId: updatedTenant.id,
+          tenantName: updatedTenant.name,
+          defaultSessionBudgetUsd: null,
+          removed: true,
+        });
+      } catch (error) {
+        console.error("Error removing tenant default session budget:", error);
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2025"
+        ) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+        return reply
+          .code(500)
+          .send({ error: "Failed to remove tenant default session budget" });
+      }
+    },
+  );
+
+  // Get tenant default session budget
+  app.get(
+    "/admin/tenant/:tenantId/default-session-budget",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Get tenant default session budget",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+          select: {
+            id: true,
+            name: true,
+            defaultSessionBudgetUsd: true,
+            _count: {
+              select: {
+                sessions: true,
+              },
+            },
+          },
+        });
+
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        return reply.send({
+          tenantId: tenant.id,
+          tenantName: tenant.name,
+          defaultSessionBudgetUsd: tenant.defaultSessionBudgetUsd
+            ? Number(tenant.defaultSessionBudgetUsd)
+            : null,
+          sessionCount: tenant._count.sessions,
+        });
+      } catch (error) {
+        console.error("Error fetching tenant default session budget:", error);
+        return reply
+          .code(500)
+          .send({ error: "Failed to fetch tenant default session budget" });
+      }
+    },
+  );
+
   return app;
 }
 
