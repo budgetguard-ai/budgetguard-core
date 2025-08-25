@@ -1172,6 +1172,10 @@ export async function buildServer() {
       if (
         sessionData &&
         sessionData.effectiveBudgetUsd != null &&
+        typeof sessionData.currentCostUsd === "number" &&
+        typeof sessionData.effectiveBudgetUsd === "number" &&
+        !isNaN(sessionData.currentCostUsd) &&
+        !isNaN(sessionData.effectiveBudgetUsd) &&
         sessionData.currentCostUsd >= sessionData.effectiveBudgetUsd
       ) {
         await markSessionBudgetExceeded(
@@ -1535,6 +1539,10 @@ export async function buildServer() {
       if (
         sessionData &&
         sessionData.effectiveBudgetUsd != null &&
+        typeof sessionData.currentCostUsd === "number" &&
+        typeof sessionData.effectiveBudgetUsd === "number" &&
+        !isNaN(sessionData.currentCostUsd) &&
+        !isNaN(sessionData.effectiveBudgetUsd) &&
         sessionData.currentCostUsd >= sessionData.effectiveBudgetUsd
       ) {
         await markSessionBudgetExceeded(
