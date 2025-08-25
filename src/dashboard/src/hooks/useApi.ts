@@ -8,6 +8,7 @@ import type {
   CreateBudgetRequest,
   CreateModelPricingRequest,
   UpdateModelPricingRequest,
+  SessionFilters,
 } from "../types";
 
 // Query keys
@@ -24,6 +25,10 @@ export const queryKeys = {
   usageLedger: (params?: Record<string, unknown>) =>
     ["usageLedger", params] as const,
   modelPricing: ["modelPricing"] as const,
+  sessions: (tenantId: number, filters?: SessionFilters) =>
+    ["tenant", tenantId, "sessions", filters] as const,
+  sessionUsage: (sessionId: string, params?: Record<string, unknown>) =>
+    ["session", sessionId, "usage", params] as const,
 };
 
 // Health hooks
@@ -347,5 +352,27 @@ export const useUpdateModelPricing = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.modelPricing });
     },
+  });
+};
+
+// Session hooks
+export const useSessions = (tenantId: number, filters?: SessionFilters) => {
+  return useQuery({
+    queryKey: queryKeys.sessions(tenantId, filters),
+    queryFn: () => apiClient.getSessions(tenantId, filters),
+    enabled: !!tenantId,
+  });
+};
+
+export const useSessionUsage = (
+  sessionId: string,
+  page = 1,
+  limit = 50,
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: queryKeys.sessionUsage(sessionId, { page, limit }),
+    queryFn: () => apiClient.getSessionUsage(sessionId, page, limit),
+    enabled: !!sessionId && enabled,
   });
 };

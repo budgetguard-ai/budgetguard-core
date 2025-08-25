@@ -5345,6 +5345,319 @@ export async function buildServer() {
     },
   );
 
+  // Session management endpoints
+  app.get(
+    "/admin/tenant/:tenantId/sessions",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "List tenant sessions",
+        params: {
+          type: "object",
+          properties: {
+            tenantId: { type: "string" },
+          },
+          required: ["tenantId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            page: { type: "number", default: 1 },
+            limit: { type: "number", default: 50, maximum: 100 },
+            startDate: { type: "string", format: "date" },
+            endDate: { type: "string", format: "date" },
+            status: {
+              type: "string",
+              enum: ["active", "budget_exceeded", "completed", "error"],
+            },
+            search: { type: "string" },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { tenantId } = req.params as { tenantId: string };
+      const {
+        page = 1,
+        limit = 50,
+        startDate,
+        endDate,
+        status,
+        search,
+      } = req.query as {
+        page?: number;
+        limit?: number;
+        startDate?: string;
+        endDate?: string;
+        status?: string;
+        search?: string;
+      };
+
+      const tenantIdNum = Number(tenantId);
+      if (isNaN(tenantIdNum)) {
+        return reply.code(400).send({ error: "Invalid tenant ID" });
+      }
+
+      try {
+        // Verify tenant exists
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantIdNum },
+          select: { id: true },
+        });
+
+        if (!tenant) {
+          return reply.code(404).send({ error: "Tenant not found" });
+        }
+
+        // Build where clause
+        const where: {
+          tenantId: number;
+          createdAt?: { gte?: Date; lte?: Date };
+          status?: string;
+          OR?: Array<
+            | { sessionId: { contains: string; mode: "insensitive" } }
+            | { name: { contains: string; mode: "insensitive" } }
+          >;
+        } = {
+          tenantId: tenantIdNum,
+        };
+
+        if (startDate || endDate) {
+          where.createdAt = {};
+          if (startDate) where.createdAt.gte = new Date(startDate);
+          if (endDate) {
+            const endDateTime = new Date(endDate);
+            endDateTime.setUTCHours(23, 59, 59, 999);
+            where.createdAt.lte = endDateTime;
+          }
+        }
+
+        if (status) {
+          where.status = status;
+        }
+
+        if (search) {
+          where.OR = [
+            { sessionId: { contains: search, mode: "insensitive" } },
+            { name: { contains: search, mode: "insensitive" } },
+          ];
+        }
+
+        const offset = (page - 1) * limit;
+
+        // Get sessions with usage count
+        const [sessions, total] = await Promise.all([
+          prisma.session.findMany({
+            where,
+            select: {
+              sessionId: true,
+              name: true,
+              path: true,
+              effectiveBudgetUsd: true,
+              currentCostUsd: true,
+              status: true,
+              metadata: true,
+              createdAt: true,
+              lastActiveAt: true,
+            },
+            orderBy: { lastActiveAt: "desc" },
+            skip: offset,
+            take: limit,
+          }),
+          prisma.session.count({ where }),
+        ]);
+
+        // Get usage counts separately since direct relation may not exist
+        const sessionIds = sessions.map((s) => s.sessionId);
+        const usageCounts = await prisma.usageLedger.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+          },
+          _count: {
+            id: true,
+          },
+        });
+
+        const usageCountMap = new Map(
+          usageCounts.map((uc) => [uc.sessionId, uc._count.id]),
+        );
+
+        // Calculate actual costs from usage ledger
+        const sessionCosts = await prisma.usageLedger.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+          },
+          _sum: {
+            usd: true,
+          },
+        });
+
+        const costMap = new Map(
+          sessionCosts.map((sc) => [sc.sessionId, Number(sc._sum.usd || 0)]),
+        );
+
+        // Format response
+        const formattedSessions = sessions.map((session) => ({
+          sessionId: session.sessionId,
+          name: session.name,
+          path: session.path,
+          effectiveBudgetUsd: session.effectiveBudgetUsd
+            ? Number(session.effectiveBudgetUsd)
+            : null,
+          currentCostUsd: costMap.get(session.sessionId) || 0,
+          status: session.status,
+          metadata: session.metadata,
+          createdAt: session.createdAt,
+          lastActiveAt: session.lastActiveAt,
+          requestCount: usageCountMap.get(session.sessionId) || 0,
+        }));
+
+        return reply.send({
+          sessions: formattedSessions,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching sessions:", error);
+        return reply.code(500).send({ error: "Failed to fetch sessions" });
+      }
+    },
+  );
+
+  app.get(
+    "/admin/sessions/:sessionId/usage",
+    {
+      preHandler: adminAuth,
+      schema: {
+        tags: ["Session Management"],
+        summary: "Get session usage details",
+        params: {
+          type: "object",
+          properties: {
+            sessionId: { type: "string" },
+          },
+          required: ["sessionId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            page: { type: "number", default: 1 },
+            limit: { type: "number", default: 50, maximum: 100 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const prisma = await getPrisma();
+      const { sessionId } = req.params as { sessionId: string };
+      const { page = 1, limit = 50 } = req.query as {
+        page?: number;
+        limit?: number;
+      };
+
+      try {
+        // Verify session exists
+        const session = await prisma.session.findUnique({
+          where: { sessionId },
+          select: {
+            sessionId: true,
+            name: true,
+            tenantId: true,
+            effectiveBudgetUsd: true,
+            currentCostUsd: true,
+            status: true,
+          },
+        });
+
+        if (!session) {
+          return reply.code(404).send({ error: "Session not found" });
+        }
+
+        const offset = (page - 1) * limit;
+
+        // Get usage ledger entries for this session
+        const [usageEntries, total] = await Promise.all([
+          prisma.usageLedger.findMany({
+            where: { sessionId },
+            select: {
+              id: true,
+              ts: true,
+              route: true,
+              model: true,
+              usd: true,
+              promptTok: true,
+              compTok: true,
+              status: true,
+              tags: {
+                select: {
+                  tag: {
+                    select: {
+                      id: true,
+                      name: true,
+                      color: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { ts: "desc" },
+            skip: offset,
+            take: limit,
+          }),
+          prisma.usageLedger.count({ where: { sessionId } }),
+        ]);
+
+        // Format response
+        const formattedEntries = usageEntries.map((entry) => ({
+          id: Number(entry.id),
+          timestamp: entry.ts,
+          route: entry.route,
+          model: entry.model,
+          usd: Number(entry.usd),
+          promptTokens: entry.promptTok,
+          completionTokens: entry.compTok,
+          status: entry.status,
+          tags: entry.tags.map((tagRef) => ({
+            id: tagRef.tag.id,
+            name: tagRef.tag.name,
+            color: tagRef.tag.color,
+          })),
+        }));
+
+        return reply.send({
+          session: {
+            sessionId: session.sessionId,
+            name: session.name,
+            tenantId: session.tenantId,
+            effectiveBudgetUsd: session.effectiveBudgetUsd
+              ? Number(session.effectiveBudgetUsd)
+              : null,
+            currentCostUsd: Number(session.currentCostUsd),
+            status: session.status,
+          },
+          usage: formattedEntries,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching session usage:", error);
+        return reply.code(500).send({ error: "Failed to fetch session usage" });
+      }
+    },
+  );
+
   return app;
 }
 

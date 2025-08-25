@@ -304,3 +304,70 @@ export interface TagAnalytics {
   activeTags: number;
   criticalBudgets: number;
 }
+
+// Session-related types
+export interface Session {
+  sessionId: string;
+  name: string | null;
+  path: string | null;
+  effectiveBudgetUsd: number | null;
+  currentCostUsd: number;
+  status: "active" | "budget_exceeded" | "completed" | "error";
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  lastActiveAt: string;
+  requestCount: number;
+}
+
+export interface SessionUsageEntry {
+  id: number;
+  timestamp: string;
+  route: string;
+  model: string;
+  usd: number;
+  promptTokens: number;
+  completionTokens: number;
+  status: "success" | "blocked" | "failed";
+  tags: Array<{
+    id: number;
+    name: string;
+    color?: string;
+  }>;
+}
+
+export interface SessionsResponse {
+  sessions: Session[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface SessionUsageResponse {
+  session: {
+    sessionId: string;
+    name: string | null;
+    tenantId: number;
+    effectiveBudgetUsd: number | null;
+    currentCostUsd: number;
+    status: string;
+  };
+  usage: SessionUsageEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface SessionFilters {
+  startDate?: string;
+  endDate?: string;
+  status?: "active" | "budget_exceeded" | "completed" | "error";
+  search?: string;
+  page?: number;
+  limit?: number;
+}
