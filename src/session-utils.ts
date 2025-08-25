@@ -260,11 +260,17 @@ export async function getOrCreateSession(
         const costCacheKey = getSessionCostCacheKey(headers.sessionId);
         const cachedCost = await redis.get(costCacheKey);
         if (cachedCost !== null) {
-          currentCost = parseFloat(cachedCost);
+          const parsedCost = parseFloat(cachedCost);
+          currentCost = isNaN(parsedCost) ? 0 : parsedCost;
         }
       } catch (error) {
         console.warn("Redis error fetching session cost:", error);
       }
+    }
+
+    // Ensure currentCost is always a valid number
+    if (typeof currentCost !== "number" || isNaN(currentCost)) {
+      currentCost = 0;
     }
 
     return {
@@ -295,14 +301,16 @@ export async function getOrCreateSession(
       });
     }
 
+    const currentCost =
+      typeof existing.currentCostUsd.toNumber === "function"
+        ? existing.currentCostUsd.toNumber()
+        : Number(existing.currentCostUsd);
+
     const sessionData: CachedSessionData = {
       sessionId: existing.sessionId,
       tenantId: existing.tenantId,
       effectiveBudgetUsd: effective,
-      currentCostUsd:
-        typeof existing.currentCostUsd.toNumber === "function"
-          ? existing.currentCostUsd.toNumber()
-          : Number(existing.currentCostUsd),
+      currentCostUsd: isNaN(currentCost) ? 0 : currentCost,
       status: existing.status,
       name: existing.name || undefined,
       path: existing.path || undefined,
