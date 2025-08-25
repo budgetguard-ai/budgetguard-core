@@ -520,6 +520,99 @@ class ApiClient {
 
     return this.request(url);
   }
+
+  // Session budget management methods
+  async getSessionBudget(
+    tenantId: number,
+    sessionId: string,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number | null;
+    currentCostUsd: number;
+    status: string;
+    budgetSource: {
+      tenantName: string;
+      tenantDefaultBudget: number | null;
+      hasCustomBudget: boolean;
+      customBudget: number | null;
+    };
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+    );
+  }
+
+  async setSessionBudget(
+    tenantId: number,
+    sessionId: string,
+    budgetUsd: number,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number;
+    currentCostUsd: number;
+    status: string;
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ budgetUsd }),
+      },
+    );
+  }
+
+  async removeSessionBudget(
+    tenantId: number,
+    sessionId: string,
+  ): Promise<{
+    sessionId: string;
+    effectiveBudgetUsd: number | null;
+    currentCostUsd: number;
+    status: string;
+    reverted: boolean;
+  }> {
+    return this.request(
+      `/admin/tenant/${tenantId}/sessions/${sessionId}/budget`,
+      {
+        method: "DELETE",
+      },
+    );
+  }
+
+  // Tenant default session budget management methods
+  async getTenantDefaultSessionBudget(tenantId: number): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: number | null;
+    sessionCount: number;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`);
+  }
+
+  async setTenantDefaultSessionBudget(
+    tenantId: number,
+    budgetUsd: number,
+  ): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: number;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`, {
+      method: "PUT",
+      body: JSON.stringify({ budgetUsd }),
+    });
+  }
+
+  async removeTenantDefaultSessionBudget(tenantId: number): Promise<{
+    tenantId: number;
+    tenantName: string;
+    defaultSessionBudgetUsd: null;
+    removed: boolean;
+  }> {
+    return this.request(`/admin/tenant/${tenantId}/default-session-budget`, {
+      method: "DELETE",
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
