@@ -5419,6 +5419,12 @@ export async function buildServer() {
           OR?: Array<
             | { sessionId: { contains: string; mode: "insensitive" } }
             | { name: { contains: string; mode: "insensitive" } }
+            | {
+                AND: Array<
+                  | { name: { not: null } }
+                  | { name: { contains: string; mode: "insensitive" } }
+                >;
+              }
           >;
         } = {
           tenantId: tenantIdNum,
@@ -5441,7 +5447,12 @@ export async function buildServer() {
         if (search) {
           where.OR = [
             { sessionId: { contains: search, mode: "insensitive" } },
-            { name: { contains: search, mode: "insensitive" } },
+            {
+              AND: [
+                { name: { not: null } },
+                { name: { contains: search, mode: "insensitive" } },
+              ],
+            },
           ];
         }
 
